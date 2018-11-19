@@ -11,6 +11,12 @@ x = x(:);
 y = y(:);
 if nargin<5
     weighted = false;
+else
+    if strcmpi(variant,'weighted')
+        weighted = true;
+    else
+        weighted = false;
+    end
 end
 if length(x) ~= length(y)
     error('calcinfo: Number of trials must match')
