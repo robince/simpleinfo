@@ -31,12 +31,18 @@ end
 % pointwise mutual information
 PMI = log2(Pxy) - bsxfun(@plus,log2(sum(Pxy,1)),log2(sum(Pxy,2)));
 
+% mutual information
+idx = Pxy(:)<eps;
+% if Pxy=0 then that cell does not appear in sum
+PMI(idx)=0;
+summand = Pxy.*PMI;
+I = sum(summand(:));
+
 if weighted
-    PMI = Pxy.*PMI;
+    PMI = summand;
 end
 
-% mutual information
-I = sum(sum(Pxy.*PMI));
+
 
 % return p-value if requested
 % 2*Ntrl*log(2) * I is chi-square distributed
