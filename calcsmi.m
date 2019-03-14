@@ -27,7 +27,8 @@ end
 PMI = log2(Pxy) - bsxfun(@plus,log2(sum(Pxy,1)),log2(sum(Pxy,2)));
 
 % mutual information
-I = sum(sum(Pxy.*PMI));
+idx = Pxy(:)>0;
+I = sum(Pxy(idx).*PMI(idx));
 
 SMI = PMI(sub2ind(size(PMI),x+1,y+1));
 
