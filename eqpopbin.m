@@ -1,7 +1,10 @@
-function xout = eqpopbin(x, nb)
+function [xbin, edges] = eqpopbin(x, nb)
 % eqpopbin(x,nb)
 % Bin a sequence of continuous values (x) into nb discrete
 % categories which are approximately equally occupied
+% Outputs:
+% xbin: x binned into integer values (values 0:nb-1)
+% edges: nb-1 bin edges
 
 sx = sort(x);
 % sx = unique(x);
@@ -20,7 +23,6 @@ edges(1:nb) = sx(indx);
 edges(nb+1) = sx(end) + 1;
 
 % bin the data
-[~, xout] = histc(x, edges);
+[~, xbin] = histc(x, edges);
 % 0 based labelling
-xout = xout - 1;
-
+xbin = xbin - 1;
