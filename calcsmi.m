@@ -1,24 +1,29 @@
-function [I SMI p] = calcsmi(x, xb, y, yb);
+function [I SMI p] = calcsmi(x, xb, y, yb, beta);
 % [I SMI p] = calcsmi(x, xb, y, yb)
-% calculate sample mutual information and p value between
+% calculate samplewise mutual information (SMI) between
 % discrete data sets x and y
-% I = MI( X ; Y )
 % x should take values in [0 xb-1]
 % y should take values in [0 yb-1]
-% SMI is pointwise MI evaluate at each input sample
+% beta is add-constant beta probability estimator (0.5 = KT estimator)
+% (default 0)
 % I = mean(SMI)
+% Outputs:
+% I - overall MI value I(X;Y)
+% SMI - [Nsample 1] vector of SMI value for each sample
+% p - p-value for overall MI value
 
 x = x(:);
 y = y(:);
 if nargin<5
-    weighted = false;
+    beta = 0;
 end
 if length(x) ~= length(y)
     error('calcsmi: Number of trials must match')
 end
 Ntrl = length(x);
 % joint probability distribution
-Pxy = accumarray([x+1 y+1],1)./Ntrl;
+counts = (accumarray([x+1 y+1],1)+beta);
+Pxy = counts./(Ntrl+beta*numel(counts));
 if size(Pxy,1) ~= xb || size(Pxy,2) ~= yb
     error('calcsmi: Problem with data values')
 end
