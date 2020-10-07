@@ -1,10 +1,21 @@
-function [I p] = calcinfo(x, xb, y, yb);
+function [I, p, Pxy] = calcinfo(x, xb, y, yb, beta)
 % [I p] = calcinfo(x, xb, y, yb)
 % calculate mutual information and p value between
 % discrete data sets x and y
 % I = MI( X ; Y )
 % x should take values in [0 xb-1]
 % y should take values in [0 yb-1]
+% beta is add-constant beta probability estimator (0.5 = KT estimator)
+% (default 0)
+% Outputs:
+% I - MI  I(X;Y)
+% p - p-value for MI (analytic from chi-square distribution)
+% beta - add-constant beta probability estimator (0.5 = KT estimator)
+% (default 0)
+
+if nargin<5
+    beta = 0;
+end
 
 x = x(:);
 y = y(:);
@@ -19,7 +30,8 @@ ent = @(p) -sum(p(p(:)>0).*log2(p(p(:)>0)));
 
 % function which calculates the probability histogram from
 % a vector of integer trials/samples 
-Pxy = accumarray([x+1 y+1],1)./Ntrl;
+counts = (accumarray([x+1 y+1],1)+beta);
+Pxy = counts./(Ntrl+beta*numel(counts));
 if size(Pxy,1) ~= xb || size(Pxy,2) ~= yb
     error('calcinfo: Problem with data values')
 end
