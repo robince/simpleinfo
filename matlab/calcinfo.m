@@ -1,5 +1,5 @@
-function [I, p, Pxy] = calcinfo(x, xb, y, yb, beta)
-% [I p] = calcinfo(x, xb, y, yb)
+function [I, p, Pxy] = calcinfo(x, xb, y, yb, bias, beta)
+% [I p] = calcinfo(x, xb, y, yb, beta)
 % calculate mutual information and p value between
 % discrete data sets x and y
 % I = MI( X ; Y )
@@ -14,6 +14,9 @@ function [I, p, Pxy] = calcinfo(x, xb, y, yb, beta)
 % (default 0)
 
 if nargin<5
+    bias = true;
+end
+if nargin<6
     beta = 0;
 end
 
@@ -31,7 +34,7 @@ ent = @(p) -sum(p(p(:)>0).*log2(p(p(:)>0)));
 % function which calculates the probability histogram from
 % a vector of integer trials/samples 
 counts = (accumarray([x+1 y+1],1)+beta);
-Pxy = counts./(Ntrl+beta*numel(counts));
+Pxy = (counts+beta)./(Ntrl+beta*numel(counts));
 if size(Pxy,1) ~= xb || size(Pxy,2) ~= yb
     error('calcinfo: Problem with data values')
 end
@@ -44,7 +47,15 @@ end
 % or equivalently that part of Y which can be explained by X
 Px = sum(Pxy,2);
 Py = sum(Pxy,1);
-I = ent(Px) + ent(Py) - ent(Pxy);
+Inobc = ent(Px) + ent(Py) - ent(Pxy);
+
+% apply simple subtactive bias correction if required
+% (subtracting the mean of the analytic chi-squared null distribution)
+if bias
+    I = Inobc - mmbiasinfo(xb,yb,Ntrl);
+else
+    I = Inobc;
+end
 
 % return p-value if requested
 % 2*Ntrl*log(2) * I is chi-square distributed
@@ -53,5 +64,5 @@ I = ent(Px) + ent(Py) - ent(Pxy);
 % called the G-test) because of the difficulty of calculating
 % logarithms before the advent of computers
 if nargout>1
-    p = 1 - chi2cdf(2*Ntrl*log(2)*I, (xb-1)*(yb-1));
+    p = 1 - chi2cdf(2*Ntrl*log(2)*Inobc, (xb-1)*(yb-1));
 end

@@ -1,4 +1,4 @@
-function [I p] = calccmi(x, xb, y, yb, z, zb);
+function [I p] = calccmi(x, xb, y, yb, z, zb, bias, beta);
 % [I p] = calccmi(x, xb, y, yb, z, zb)
 % calculate conditional mutual information and p value between
 % discrete data sets x and y, conditioning out z
@@ -6,6 +6,13 @@ function [I p] = calccmi(x, xb, y, yb, z, zb);
 % x should take values in [0 xb-1]
 % y should take values in [0 yb-1]
 % z should take values in [0 zb-1]
+
+if nargin<7
+    bias = true;
+end
+if nargin<8
+    beta = 0.;
+end
 
 x = x(:);
 y = y(:);
@@ -21,7 +28,8 @@ ent = @(p) -sum(p(p(:)>0).*log2(p(p(:)>0)));
 
 % function which calculates the probability histogram from
 % a vector of integer trials/samples 
-Pxyz = accumarray([x+1 y+1 z+1],1)./Ntrl;
+counts = accumarray([x+1 y+1 z+1],1);
+Pxyz = (counts+beta)./(Ntrl+beta*numel(counts));
 if size(Pxyz,1)~=xb || size(Pxyz,2)~=yb || size(Pxyz,3)~=zb
     error('calcinfo: Problem with data values')
 end
@@ -32,8 +40,13 @@ HXZ = ent(sum(Pxyz,2));
 HYZ = ent(sum(Pxyz,1));
 HXYZ = ent(Pxyz);
 HZ = ent(sum(sum(Pxyz,1),2));
-I = HXZ + HYZ - HXYZ - HZ;
+Inobc = HXZ + HYZ - HXYZ - HZ;
 
+if bias
+    I = Inobc - mmbiascmi(xb, yb, zb, Ntrl);
+else
+    I = Inobc
+end
 
 % return p-value if requested
 % 2*Ntrl*log(2) * I is chi-square distributed
@@ -42,5 +55,5 @@ I = HXZ + HYZ - HXYZ - HZ;
 % called the G-test) because of the difficulty of calculating
 % logarithms before the advent of computers
 if nargout>1
-    p = 1 - chi2cdf(2*Ntrl*log(2)*I, zb*(xb-1)*(yb-1));
+    p = 1 - chi2cdf(2*Ntrl*log(2)*Inobc, zb*(xb-1)*(yb-1));
 end

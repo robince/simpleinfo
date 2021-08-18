@@ -160,7 +160,7 @@ def calccmi(x, xb, y, yb, z, zb, bias=True, calc_p=False, beta=0.):
     yedges = np.arange(-0.5, yb+0.5);
     zedges = np.arange(-0.5, zb+0.5);
     counts, e = np.histogramdd([x,y,z],[xedges,yedges,zedges])
-    Pxyz = (counts+beta) / (float(Ntrl)+beta*len(counts))
+    Pxyz = (counts+beta) / (float(Ntrl)+beta*counts.size)
     Pxz = np.sum(Pxyz, axis=1, keepdims=True)
     Pyz = np.sum(Pxyz, axis=0, keepdims=True)
     Pz = np.sum(Pxyz, axis=1, keepdims=True).sum(axis=0, keepdims=True)

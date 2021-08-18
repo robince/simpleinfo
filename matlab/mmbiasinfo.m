@@ -1,4 +1,4 @@
-function bias = mmbias(Nx, Ny, Ntrl)
+function bias = mmbiasinfo(Nx, Ny, Ntrl)
 % bias = mmbias(Nx, Ny, Ntrl)
 % Miller-Madow bias estimate for subtraction from uncorrected binned
 % information values
