@@ -1,0 +1,13 @@
+function bias = mmbiascoi(Nx, Ny, Nz, Ntrl)
+% bias = mmbias(Nx, Ny, Ntrl)
+% Miller-Madow bias estimate for subtraction from uncorrected binned
+% information values
+% Nx - number of bins for first variable
+% Ny - number of bins for second variable
+% Nz - number of bins for second variable
+% Ntrl - number of trials
+
+if ~isscalar(Nx) || ~isscalar(Ny) || ~isscalar(Ntrl)
+    error('mmbias: only scalar arguments supported')
+end
+bias = (Nx*Ny + Nx*Nz + Ny*Nz - Nx - Ny - Nz - Nx*Ny*Nz + 1) / (2.*Ntrl*log(2));

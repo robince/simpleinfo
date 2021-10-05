@@ -32,7 +32,7 @@ end
 Ntrl = length(x);
 % joint probability distribution
 counts = (accumarray([x+1 y+1],1)+beta);
-Pxy = counts./(Ntrl+beta*numel(counts));
+Pxy = (counts+beta)./(Ntrl+beta*numel(counts));
 if size(Pxy,1) ~= xb || size(Pxy,2) ~= yb
     error('calcpmi: Problem with data values')
 end
