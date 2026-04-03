@@ -13,6 +13,9 @@ N = length(sx);
 % determine the edges of the bins
 numel_bin = floor(N/nb); %number of values-per-bin
 r = N - (numel_bin*nb);  % Remainder
+if numel_bin == 0
+    error('eqpopbin: nb cannot exceed the number of samples');
+end
 
 indx = 1:numel_bin:numel_bin*nb;
 indx(1:r) = indx(1:r) + (0:(r-1));

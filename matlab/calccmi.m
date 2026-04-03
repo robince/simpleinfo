@@ -27,12 +27,9 @@ Ntrl = length(x);
 ent = @(p) -sum(p(p(:)>0).*log2(p(p(:)>0)));
 
 % function which calculates the probability histogram from
-% a vector of integer trials/samples 
-counts = accumarray([x+1 y+1 z+1],1);
+% a vector of integer trials/samples
+counts = accumarray([x+1 y+1 z+1], 1, [xb yb zb]);
 Pxyz = (counts+beta)./(Ntrl+beta*numel(counts));
-if size(Pxyz,1)~=xb || size(Pxyz,2)~=yb || size(Pxyz,3)~=zb
-    error('calcinfo: Problem with data values')
-end
 
 % conditional mutual information
 % I(X;Y|Z) = H(X,Z) + H(Y,Z) - H(X,Y,Z) - H(Z)
@@ -45,7 +42,7 @@ Inobc = HXZ + HYZ - HXYZ - HZ;
 if bias
     I = Inobc - mmbiascmi(xb, yb, zb, Ntrl);
 else
-    I = Inobc
+    I = Inobc;
 end
 
 % return p-value if requested

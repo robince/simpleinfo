@@ -32,12 +32,9 @@ Ntrl = length(x);
 ent = @(p) -sum(p(p(:)>0).*log2(p(p(:)>0)));
 
 % function which calculates the probability histogram from
-% a vector of integer trials/samples 
-counts = (accumarray([x+1 y+1],1)+beta);
+% a vector of integer trials/samples
+counts = accumarray([x+1 y+1], 1, [xb yb]);
 Pxy = (counts+beta)./(Ntrl+beta*numel(counts));
-if size(Pxy,1) ~= xb || size(Pxy,2) ~= yb
-    error('calcinfo: Problem with data values')
-end
 
 % mutual information
 % I(X;Y) = H(X) + H(Y) - H(X,Y)

@@ -32,11 +32,8 @@ if length(x) ~= length(y) || length(x) ~= length(z)
 end
 Ntrl = length(x);
 % joint probability distribution
-counts = accumarray([x+1 y+1 z+1],1);
+counts = accumarray([x+1 y+1 z+1], 1, [xb yb zb]);
 Pxyz = (counts+beta)./(Ntrl+beta*numel(counts));
-if size(Pxyz,1)~=xb || size(Pxyz,2)~=yb || size(Pxyz,3)~=zb
-    error('calccoi: Problem with data values')
-end
 
 
 Px = sum(sum(Pxyz,2),3);
@@ -48,12 +45,12 @@ Pxz = sum(Pxyz,2);
 Pyz = sum(Pxyz,1);
 
 % relies on Matlab automatic singleton expansion since 2016b
-PcoI = log2(Pxy) + log2(Pxz) + log2(Pyz) - log2(Px) - log2(Py) - log2(Pz) - log2(Pxyz);
+rawPcoI = log2(Pxy) + log2(Pxz) + log2(Pyz) - log2(Px) - log2(Py) - log2(Pz) - log2(Pxyz);
+PcoI = zeros(size(Pxyz));
+idx = Pxyz>0;
+PcoI(idx) = rawPcoI(idx);
 
 % co-information
-idx = Pxyz(:)<eps;
-% if Pxyz=0 then that cell does not appear in sum
-PcoI(idx)=0;
 summand = Pxyz.*PcoI;
 coI = sum(summand(:));
 

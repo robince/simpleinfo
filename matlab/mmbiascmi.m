@@ -6,7 +6,7 @@ function bias = mmbiascmi(Nx, Ny, Nz, Ntrl)
 % Ny - number of bins for second variable
 % Ntrl - number of trials
 
-if ~isscalar(Nx) || ~isscalar(Ny) || ~isscalar(Ntrl)
+if ~isscalar(Nx) || ~isscalar(Ny) || ~isscalar(Nz) || ~isscalar(Ntrl)
     error('mmbias: only scalar arguments supported')
 end
 bias = Nz.*(Nx-1).*(Ny-1) ./ (2.*Ntrl*log(2));
