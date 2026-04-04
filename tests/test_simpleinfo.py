@@ -1,6 +1,12 @@
+import sys
 import unittest
+from pathlib import Path
 
 import numpy as np
+
+PYTHON_SRC = Path(__file__).resolve().parents[1] / "python" / "src"
+if str(PYTHON_SRC) not in sys.path:
+    sys.path.insert(0, str(PYTHON_SRC))
 
 import simpleinfo
 
