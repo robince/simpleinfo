@@ -30,12 +30,9 @@ Ntrl = length(x);
 ent = @(p) -sum(p(p(:)>0).*log2(p(p(:)>0)));
 
 % function which calculates the probability histogram from
-% a vector of integer trials/samples 
-counts = accumarray([x+1 y+1 z+1],1);
+% a vector of integer trials/samples
+counts = accumarray([x+1 y+1 z+1], 1, [xb yb zb]);
 Pxyz = (counts+beta)./(Ntrl+beta*numel(counts));
-if size(Pxyz,1)~=xb || size(Pxyz,2)~=yb || size(Pxyz,3)~=zb
-    error('calccoi: Problem with data values')
-end
 
 HX = ent(sum(sum(Pxyz,2),3));
 HY = ent(sum(sum(Pxyz,1),3));

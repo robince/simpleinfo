@@ -10,7 +10,7 @@ Nsamp = 600;
 salience = randi(2,Nsamp,1)-1; % 0,1 coded low vs high saliency of each object
 fixation = randi(2,Nsamp,1)-1; % 0,1 coded measure of fixation (could be fixated in first second, fixated at all etc.)
 
-[I p] = calcinfo(salience,2,fixation,2);
+[I p] = calcinfo(salience,2,fixation,2,false);
 % I is effect size, p gives p-value (sort of approximate)
 
 % you might want to "bias correct" the value for later things like
@@ -32,7 +32,7 @@ target = randi(2,Nsamp,1)-1; % 0,1 coded target vs distractor
 %I I(salience; fixation | target).
 % There are two ways to do this... the first is with calcmi
 
-[CMI p] = calccmi(salience,2,fixation,2,target,2);
+[CMI p] = calccmi(salience,2,fixation,2,target,2,false);
 bias = mmbiascmi(2,2,2,Nsamp);
 CMIbc = CMI - bias;
 
@@ -47,7 +47,7 @@ individualcmi = zeros(1,2);
 Ntrltarget = zeros(1,2);
 for i=1:2
     idx = target==i-1;
-    individualcmi(i) = calcinfo(salience(idx),2,fixation(idx),2);
+    individualcmi(i) = calcinfo(salience(idx),2,fixation(idx),2,false);
     Ntrltarget(i) = sum(idx);
 end
 % cmi is the avarage of these
@@ -123,4 +123,3 @@ cfix = copnorm(fixation(:));
 I = mi_gg(cfix, csalience);
 
 % more conditional possible as required....
-

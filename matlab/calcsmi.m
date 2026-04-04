@@ -22,17 +22,16 @@ if length(x) ~= length(y)
 end
 Ntrl = length(x);
 % joint probability distribution
-counts = (accumarray([x+1 y+1],1)+beta);
-Pxy = counts./(Ntrl+beta*numel(counts));
-if size(Pxy,1) ~= xb || size(Pxy,2) ~= yb
-    error('calcsmi: Problem with data values')
-end
+counts = accumarray([x+1 y+1], 1, [xb yb]);
+Pxy = (counts+beta)./(Ntrl+beta*numel(counts));
 
 % pointwise mutual information
-PMI = log2(Pxy) - bsxfun(@plus,log2(sum(Pxy,1)),log2(sum(Pxy,2)));
+PMI = zeros(size(Pxy));
+idx = Pxy>0;
+Pxyind = sum(Pxy,2) * sum(Pxy,1);
+PMI(idx) = log2(Pxy(idx)) - log2(Pxyind(idx));
 
 % mutual information
-idx = Pxy(:)>0;
 I = sum(Pxy(idx).*PMI(idx));
 
 SMI = PMI(sub2ind(size(PMI),x+1,y+1));
