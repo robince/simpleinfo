@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..core import _as_discrete_samples, _validate_bin_count, mmbiascmi, mmbiasinfo
+from ..core import _validate_bin_count, mmbiascmi, mmbiasinfo
 from . import _fallback
 
 from numba import get_num_threads, njit, prange, set_num_threads
@@ -265,8 +265,8 @@ def calcinfo(x, xb, y, yb, *, bias=False, validate=True, threads=None):
     _reject_per_call_threads(threads)
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
-    x = _as_discrete_samples(x, xb, "x") if validate else np.asarray(x, dtype=np.int64).reshape(-1)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    x = _fallback._as_fastinfo_discrete_vector(x, xb, "x") if validate else _fallback._require_fastinfo_vector_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_vector(y, yb, "y") if validate else _fallback._require_fastinfo_vector_layout(y, "y")
     if x.size != y.size:
         raise ValueError("calcinfo: Number of trials must match.")
     out = float(_calcinfo_numba(x, xb, y, yb))
@@ -279,8 +279,8 @@ def calcinfomatched(x, xb, y, yb, *, bias=False, validate=True, threads=None):
     _reject_per_call_threads(threads)
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
-    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _fallback._as_fastinfo_discrete_matrix(y, yb, "y") if validate else _fallback._require_fastinfo_matrix_layout(y, "y").astype(np.int64, copy=False)
+    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_matrix(y, yb, "y") if validate else _fallback._require_fastinfo_matrix_layout(y, "y")
     if x.shape != y.shape:
         raise ValueError("x and y must have the same shape.")
     n_threads = get_num_threads()
@@ -298,9 +298,9 @@ def calccmi(x, xb, y, yb, z, zb, *, bias=False, validate=True, threads=None):
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
     zb = _validate_bin_count(zb, "zb")
-    x = _as_discrete_samples(x, xb, "x") if validate else np.asarray(x, dtype=np.int64).reshape(-1)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
-    z = _as_discrete_samples(z, zb, "z") if validate else np.asarray(z, dtype=np.int64).reshape(-1)
+    x = _fallback._as_fastinfo_discrete_vector(x, xb, "x") if validate else _fallback._require_fastinfo_vector_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_vector(y, yb, "y") if validate else _fallback._require_fastinfo_vector_layout(y, "y")
+    z = _fallback._as_fastinfo_discrete_vector(z, zb, "z") if validate else _fallback._require_fastinfo_vector_layout(z, "z")
     if x.size != y.size or x.size != z.size:
         raise ValueError("calccmi: Number of trials must match.")
     out = float(_calccmi_numba(x, xb, y, yb, z, zb))
@@ -317,8 +317,8 @@ def calcinfo_slice(x, xb, y, yb, *, bias=False, validate=True, threads=None):
     _reject_per_call_threads(threads)
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
-    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_vector(y, yb, "y") if validate else _fallback._require_fastinfo_vector_layout(y, "y")
     if x.shape[1] != y.size:
         raise ValueError("x must have shape [Nx, Ntrl] and y must have length Ntrl.")
     n_threads = get_num_threads()
@@ -336,9 +336,9 @@ def calccmi_slice(x, xb, y, yb, z, zb, *, bias=False, validate=True, threads=Non
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
     zb = _validate_bin_count(zb, "zb")
-    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
-    z = _as_discrete_samples(z, zb, "z") if validate else np.asarray(z, dtype=np.int64).reshape(-1)
+    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_vector(y, yb, "y") if validate else _fallback._require_fastinfo_vector_layout(y, "y")
+    z = _fallback._as_fastinfo_discrete_vector(z, zb, "z") if validate else _fallback._require_fastinfo_vector_layout(z, "z")
     if x.shape[1] != y.size or x.shape[1] != z.size:
         raise ValueError("x must have shape [Nx, Ntrl], y and z must have length Ntrl.")
     n_threads = get_num_threads()
@@ -364,8 +364,8 @@ def calcinfoperm(x, xb, y, yb, nperm, *, bias=False, validate=True, threads=None
     if not isinstance(nperm, (int, np.integer)) or int(nperm) < 0:
         raise ValueError("nperm must be a non-negative integer.")
     nperm = int(nperm)
-    x = _as_discrete_samples(x, xb, "x") if validate else np.asarray(x, dtype=np.int64).reshape(-1)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    x = _fallback._as_fastinfo_discrete_vector(x, xb, "x") if validate else _fallback._require_fastinfo_vector_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_vector(y, yb, "y") if validate else _fallback._require_fastinfo_vector_layout(y, "y")
     if x.size != y.size:
         raise ValueError("calcinfoperm: Number of trials must match.")
     if seed is None:
@@ -388,8 +388,8 @@ def calcinfoperm_slice(x, xb, y, yb, nperm, *, bias=False, validate=True, thread
     if not isinstance(nperm, (int, np.integer)) or int(nperm) < 0:
         raise ValueError("nperm must be a non-negative integer.")
     nperm = int(nperm)
-    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    x = _fallback._as_fastinfo_discrete_matrix(x, xb, "x") if validate else _fallback._require_fastinfo_matrix_layout(x, "x")
+    y = _fallback._as_fastinfo_discrete_vector(y, yb, "y") if validate else _fallback._require_fastinfo_vector_layout(y, "y")
     if x.shape[1] != y.size:
         raise ValueError("x must have shape [Nx, Ntrl] and y must have length Ntrl.")
     if seed is None:

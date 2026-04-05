@@ -7,7 +7,6 @@ import warnings
 import numpy as np
 
 from ..core import (
-    _as_discrete_samples,
     _joint_counts_2d,
     _joint_counts_3d,
     _validate_bin_count,
@@ -15,10 +14,8 @@ from ..core import (
     calccondcmi as calccondcmi_reference,
     calcinfomatched as calcinfomatched_reference,
     calcinfoperm_slice as calcinfoperm_slice_reference,
-    calcinfo as calcinfo_reference,
     calcpairwiseinfo as calcpairwiseinfo_reference,
     calcpairwiseinfo_slice as calcpairwiseinfo_slice_reference,
-    calccmi as calccmi_reference,
     mmbiascmi,
     mmbiasinfo,
 )
@@ -57,12 +54,45 @@ def _warn_if_quantized(values, nb, warn_on_ties, func_name):
         )
 
 
+def _validate_integer_dtype(array, name):
+    if not np.issubdtype(array.dtype, np.integer):
+        raise ValueError(f"{name} must have an integer dtype.")
+    return array
+
+
+def _validate_discrete_bounds(array, nbins, name):
+    if np.any(array < 0) or np.any(array >= nbins):
+        raise ValueError(f"{name} must take values in [0, {nbins - 1}].")
+    return array
+
+
+def _as_fastinfo_discrete_vector(values, nbins, name):
+    array = np.asarray(values)
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a one-dimensional array.")
+    if array.size == 0:
+        raise ValueError(f"{name} must contain at least one sample.")
+    array = _validate_integer_dtype(array, name)
+    return _validate_discrete_bounds(array, nbins, name)
+
+
+def _require_fastinfo_vector_layout(values, name):
+    array = np.asarray(values)
+    if array.ndim != 1:
+        raise ValueError(f"{name} must be a one-dimensional array.")
+    if array.size == 0:
+        raise ValueError(f"{name} must contain at least one sample.")
+    return array
+
+
 def _as_discrete_matrix(values, nbins, name):
     array = np.asarray(values)
     if array.ndim != 2:
         raise ValueError(f"{name} must be a 2-D array.")
-    flat = _as_discrete_samples(array, nbins, name)
-    return flat.reshape(array.shape)
+    if array.size == 0:
+        raise ValueError(f"{name} must contain at least one sample.")
+    array = _validate_integer_dtype(array, name)
+    return _validate_discrete_bounds(array, nbins, name)
 
 
 def _require_fastinfo_matrix_layout(values, name):
@@ -80,19 +110,8 @@ def _require_fastinfo_matrix_layout(values, name):
 
 def _as_fastinfo_discrete_matrix(values, nbins, name):
     array = _require_fastinfo_matrix_layout(values, name)
-
-    if np.issubdtype(array.dtype, np.integer):
-        samples = array.astype(np.int64, copy=False)
-    else:
-        rounded = np.rint(array)
-        if not np.allclose(array, rounded):
-            raise ValueError(f"{name} must contain integer-valued samples.")
-        samples = rounded.astype(np.int64)
-
-    if np.any(samples < 0) or np.any(samples >= nbins):
-        raise ValueError(f"{name} must take values in [0, {nbins - 1}].")
-
-    return samples
+    array = _validate_integer_dtype(array, name)
+    return _validate_discrete_bounds(array, nbins, name)
 
 
 def _validate_continuous_vector(values, name):
@@ -195,14 +214,22 @@ def calcinfo(x, xb, y, yb, *, bias=False, validate=True, threads=None):
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
     if validate:
-        x = _as_discrete_samples(x, xb, "x")
-        y = _as_discrete_samples(y, yb, "y")
-        if x.size != y.size:
-            raise ValueError("calcinfo: Number of trials must match.")
-        info = calcinfo_reference(x, xb, y, yb, bias=False, calc_p=False, beta=0.0)
+        x = _as_fastinfo_discrete_vector(x, xb, "x")
+        y = _as_fastinfo_discrete_vector(y, yb, "y")
     else:
-        info = calcinfo_reference(x, xb, y, yb, bias=False, calc_p=False, beta=0.0)
         x = np.asarray(x).reshape(-1)
+        y = np.asarray(y).reshape(-1)
+    if x.size != y.size:
+        raise ValueError("calcinfo: Number of trials must match.")
+    counts = _joint_counts_2d(x, xb, y, yb)
+    px = counts.sum(axis=1)
+    py = counts.sum(axis=0)
+    n_trials = x.size
+    info = (
+        np.log2(n_trials) - np.sum(px[px > 0] * np.log2(px[px > 0])) / n_trials
+        + np.log2(n_trials) - np.sum(py[py > 0] * np.log2(py[py > 0])) / n_trials
+        - (np.log2(n_trials) - np.sum(counts[counts > 0] * np.log2(counts[counts > 0])) / n_trials)
+    )
     if bias:
         info -= mmbiasinfo(xb, yb, x.size)
     return info
@@ -212,8 +239,8 @@ def calcinfomatched(x, xb, y, yb, *, bias=False, validate=True, threads=None):
     del threads
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
-    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_fastinfo_discrete_matrix(y, yb, "y") if validate else _require_fastinfo_matrix_layout(y, "y").astype(np.int64, copy=False)
+    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x")
+    y = _as_fastinfo_discrete_matrix(y, yb, "y") if validate else _require_fastinfo_matrix_layout(y, "y")
     if x.shape != y.shape:
         raise ValueError("x and y must have the same shape.")
     return calcinfomatched_reference(x.T, xb, y.T, yb, bias=bias, beta=0.0)
@@ -225,15 +252,26 @@ def calccmi(x, xb, y, yb, z, zb, *, bias=False, validate=True, threads=None):
     yb = _validate_bin_count(yb, "yb")
     zb = _validate_bin_count(zb, "zb")
     if validate:
-        x = _as_discrete_samples(x, xb, "x")
-        y = _as_discrete_samples(y, yb, "y")
-        z = _as_discrete_samples(z, zb, "z")
-        if x.size != y.size or x.size != z.size:
-            raise ValueError("calccmi: Number of trials must match.")
-        info = calccmi_reference(x, xb, y, yb, z, zb, bias=False, calc_p=False, beta=0.0)
+        x = _as_fastinfo_discrete_vector(x, xb, "x")
+        y = _as_fastinfo_discrete_vector(y, yb, "y")
+        z = _as_fastinfo_discrete_vector(z, zb, "z")
     else:
-        info = calccmi_reference(x, xb, y, yb, z, zb, bias=False, calc_p=False, beta=0.0)
         x = np.asarray(x).reshape(-1)
+        y = np.asarray(y).reshape(-1)
+        z = np.asarray(z).reshape(-1)
+    if x.size != y.size or x.size != z.size:
+        raise ValueError("calccmi: Number of trials must match.")
+    counts = _joint_counts_3d(x, xb, y, yb, z, zb)
+    n_trials = x.size
+    pxz = np.sum(counts, axis=1)
+    pyz = np.sum(counts, axis=0)
+    pz = np.sum(pyz, axis=0)
+    info = (
+        np.log2(n_trials) - np.sum(pxz[pxz > 0] * np.log2(pxz[pxz > 0])) / n_trials
+        + np.log2(n_trials) - np.sum(pyz[pyz > 0] * np.log2(pyz[pyz > 0])) / n_trials
+        - (np.log2(n_trials) - np.sum(counts[counts > 0] * np.log2(counts[counts > 0])) / n_trials)
+        - (np.log2(n_trials) - np.sum(pz[pz > 0] * np.log2(pz[pz > 0])) / n_trials)
+    )
     if bias:
         info -= mmbiascmi(xb, yb, zb, x.size)
     return info
@@ -246,10 +284,15 @@ def calccondcmi(x, xb, y, yb, z, zb, k, kb, *, validate=True, threads=None):
     zb = _validate_bin_count(zb, "zb")
     kb = _validate_bin_count(kb, "kb")
     if validate:
-        x = _as_discrete_samples(x, xb, "x")
-        y = _as_discrete_samples(y, yb, "y")
-        z = _as_discrete_samples(z, zb, "z")
-        k = _as_discrete_samples(k, kb, "k")
+        x = _as_fastinfo_discrete_vector(x, xb, "x")
+        y = _as_fastinfo_discrete_vector(y, yb, "y")
+        z = _as_fastinfo_discrete_vector(z, zb, "z")
+        k = _as_fastinfo_discrete_vector(k, kb, "k")
+    else:
+        x = _require_fastinfo_vector_layout(x, "x")
+        y = _require_fastinfo_vector_layout(y, "y")
+        z = _require_fastinfo_vector_layout(z, "z")
+        k = _require_fastinfo_vector_layout(k, "k")
     return calccondcmi_reference(x, xb, y, yb, z, zb, k, kb)
 
 
@@ -262,11 +305,11 @@ def calcinfoperm(x, xb, y, yb, nperm, *, bias=False, validate=True, threads=None
     nperm = int(nperm)
 
     if validate:
-        x = _as_discrete_samples(x, xb, "x")
-        y = _as_discrete_samples(y, yb, "y")
+        x = _as_fastinfo_discrete_vector(x, xb, "x")
+        y = _as_fastinfo_discrete_vector(y, yb, "y")
     else:
-        x = np.asarray(x, dtype=np.int64).reshape(-1)
-        y = np.asarray(y, dtype=np.int64).reshape(-1)
+        x = np.asarray(x).reshape(-1)
+        y = np.asarray(y).reshape(-1)
     if x.size != y.size:
         raise ValueError("calcinfoperm: Number of trials must match.")
 
@@ -278,13 +321,13 @@ def calcinfoperm(x, xb, y, yb, nperm, *, bias=False, validate=True, threads=None
         generator = rng
         for i in range(nperm):
             generator.shuffle(xsh)
-            out[i] = calcinfo_reference(xsh, xb, y, yb, bias=False, calc_p=False, beta=0.0)
+            out[i] = calcinfo(xsh, xb, y, yb, bias=False, validate=False)
     else:
         if seed is None:
             seed = 5489
         for i in range(nperm):
             xsh = _fisher_yates_shuffle_seeded(x, int(seed) + i)
-            out[i] = calcinfo_reference(xsh, xb, y, yb, bias=False, calc_p=False, beta=0.0)
+            out[i] = calcinfo(xsh, xb, y, yb, bias=False, validate=False)
 
     if bias:
         out -= mmbiasinfo(xb, yb, x.size)
@@ -298,8 +341,8 @@ def calcinfoperm_slice(x, xb, y, yb, nperm, *, bias=False, validate=True, thread
     if not isinstance(nperm, (int, np.integer)) or int(nperm) < 0:
         raise ValueError("nperm must be a non-negative integer.")
     nperm = int(nperm)
-    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x")
+    y = _as_fastinfo_discrete_vector(y, yb, "y") if validate else _require_fastinfo_vector_layout(y, "y")
     if x.shape[1] != y.size:
         raise ValueError("x must have shape [Nx, Ntrl] and y must have length Ntrl.")
     if seed is None:
@@ -311,7 +354,7 @@ def calcinfoperm_slice(x, xb, y, yb, nperm, *, bias=False, validate=True, thread
         for perm in range(nperm):
             seed_col = _splitmix64_py(_splitmix64_py(int(seed)) + col)
             xsh = _fisher_yates_shuffle_seeded(x[col], _splitmix64_py(seed_col + perm))
-            out[perm, col] = calcinfo_reference(xsh, xb, y, yb, bias=False, calc_p=False, beta=0.0)
+            out[perm, col] = calcinfo(xsh, xb, y, yb, bias=False, validate=False)
     if bias:
         out -= mmbiasinfo(xb, yb, x.shape[1])
     return out
@@ -321,8 +364,8 @@ def calcinfo_slice(x, xb, y, yb, *, bias=False, validate=True, threads=None):
     del threads
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
-    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x")
+    y = _as_fastinfo_discrete_vector(y, yb, "y") if validate else _require_fastinfo_vector_layout(y, "y")
     if x.shape[1] != y.size:
         raise ValueError("x must have shape [Nx, Ntrl] and y must have length Ntrl.")
 
@@ -350,9 +393,9 @@ def calccmi_slice(x, xb, y, yb, z, zb, *, bias=False, validate=True, threads=Non
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
     zb = _validate_bin_count(zb, "zb")
-    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x").astype(np.int64, copy=False)
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
-    z = _as_discrete_samples(z, zb, "z") if validate else np.asarray(z, dtype=np.int64).reshape(-1)
+    x = _as_fastinfo_discrete_matrix(x, xb, "x") if validate else _require_fastinfo_matrix_layout(x, "x")
+    y = _as_fastinfo_discrete_vector(y, yb, "y") if validate else _require_fastinfo_vector_layout(y, "y")
+    z = _as_fastinfo_discrete_vector(z, zb, "z") if validate else _require_fastinfo_vector_layout(z, "z")
     if x.shape[1] != y.size or x.shape[1] != z.size:
         raise ValueError("x must have shape [Nx, Ntrl], y and z must have length Ntrl.")
     return calccmi_slice_reference(x.T, xb, y, yb, z, zb, bias=bias, beta=0.0)
@@ -427,7 +470,9 @@ def calcpairwiseinfo(x, xb, y, yb, *, bias=False, validate=True):
     yb = _validate_bin_count(yb, "yb")
     if validate:
         x = _validate_continuous_vector(x, "x")
-        y = _as_discrete_samples(y, yb, "y")
+        y = _as_fastinfo_discrete_vector(y, yb, "y")
+    else:
+        y = _require_fastinfo_vector_layout(y, "y")
     return calcpairwiseinfo_reference(x, xb, y, yb, bias=bias)
 
 
@@ -437,7 +482,7 @@ def calcpairwiseinfo_slice(x, xb, y, yb, *, bias=False, validate=True):
     x = _validate_fastinfo_continuous_matrix(x, "x") if validate else np.asarray(
         _require_fastinfo_matrix_layout(x, "x"), dtype=float
     )
-    y = _as_discrete_samples(y, yb, "y") if validate else np.asarray(y, dtype=np.int64).reshape(-1)
+    y = _as_fastinfo_discrete_vector(y, yb, "y") if validate else _require_fastinfo_vector_layout(y, "y")
     if x.shape[1] != y.size:
         raise ValueError("x must have shape [Nx, Ntrl] and y must have length Ntrl.")
     return calcpairwiseinfo_slice_reference(x.T, xb, y, yb, bias=bias)

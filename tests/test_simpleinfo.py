@@ -328,6 +328,29 @@ class SimpleInfoTests(unittest.TestCase):
         self.assertTrue(np.all(null >= -1e-12))
         self.assertLess(float(np.mean(null)), 0.02)
 
+    def test_fastinfo_discrete_validators_preserve_integer_dtype_without_copy(self):
+        x = np.array([0, 1, 1, 0], dtype=np.int16)
+        X = np.array([[0, 1, 1, 0], [1, 0, 0, 1]], dtype=np.int32)
+
+        vector = fastinfo_fallback._as_fastinfo_discrete_vector(x, 2, "x")
+        matrix = fastinfo_fallback._as_fastinfo_discrete_matrix(X, 2, "X")
+
+        self.assertEqual(vector.dtype, np.int16)
+        self.assertEqual(matrix.dtype, np.int32)
+        self.assertTrue(np.shares_memory(vector, x))
+        self.assertTrue(np.shares_memory(matrix, X))
+
+    def test_fastinfo_public_api_accepts_low_width_integer_inputs(self):
+        x = np.array([0, 0, 1, 1], dtype=np.int16)
+        y = np.array([0, 0, 1, 1], dtype=np.int16)
+        X = np.array([[0, 0, 1, 1], [0, 1, 0, 1]], dtype=np.int32)
+
+        self.assertAlmostEqual(simpleinfo.fastinfo.calcinfo(x, 2, y, 2), 1.0)
+        np.testing.assert_allclose(
+            simpleinfo.fastinfo.calcinfo_slice(X, 2, y.astype(np.int32), 2),
+            np.array([1.0, 0.0]),
+        )
+
     @unittest.skipUnless(fastinfo_api is not None and fastinfo_api.BACKEND == "numba", "Numba backend not active")
     def test_numba_backend_matches_numpy_fallback(self):
         x = np.array([0, 0, 1, 1, 0, 1, 0, 1])

@@ -42,8 +42,16 @@ MATLAB:
 - `fastinfo.calccmi`
 - `fastinfo.calcinfoperm`
 - `fastinfo.calcinfo_slice`
+- `fastinfo.calcinfomatched`
+- `fastinfo.calccondcmi`
+- `fastinfo.calccmi_slice`
+- `fastinfo.calcinfoperm_slice`
 - `fastinfo.eqpop`
 - `fastinfo.eqpop_sorted`
+- `fastinfo.eqpop_slice`
+- `fastinfo.eqpop_sorted_slice`
+- `fastinfo.calcpairwiseinfo`
+- `fastinfo.calcpairwiseinfo_slice`
 
 Python:
 
@@ -51,8 +59,16 @@ Python:
 - `simpleinfo.fastinfo.calccmi`
 - `simpleinfo.fastinfo.calcinfoperm`
 - `simpleinfo.fastinfo.calcinfo_slice`
+- `simpleinfo.fastinfo.calcinfomatched`
+- `simpleinfo.fastinfo.calccondcmi`
+- `simpleinfo.fastinfo.calccmi_slice`
+- `simpleinfo.fastinfo.calcinfoperm_slice`
 - `simpleinfo.fastinfo.eqpop`
 - `simpleinfo.fastinfo.eqpop_sorted`
+- `simpleinfo.fastinfo.eqpop_slice`
+- `simpleinfo.fastinfo.eqpop_sorted_slice`
+- `simpleinfo.fastinfo.calcpairwiseinfo`
+- `simpleinfo.fastinfo.calcpairwiseinfo_slice`
 
 Rationale:
 
@@ -118,6 +134,27 @@ Rationale:
 - it avoids silently accepting malformed label sets
 - it keeps MATLAB and Python contracts unambiguous
 
+### Integer input policy
+
+For the discrete `fastinfo` kernels, integer label arrays are the intended
+public input type.
+
+MATLAB fast path:
+
+- zero-copy MEX dispatch currently supports `int16`, `int32`, and `int64`
+- users should convert integer-valued `double` arrays before calling the fast
+  discrete kernels
+- `fastinfo.eqpop` and `fastinfo.eqpop_sorted` return integer labels, so the
+  normal path `eqpop -> calcinfo` stays on the typed fast route
+
+Python fast path:
+
+- integer arrays are the intended public input type
+- Numba can specialize kernels by dtype automatically
+- some validated Python paths may still normalize inputs to `int64`
+  internally, so dtype specialization is currently less strict than the MATLAB
+  zero-copy path
+
 ## Binning Semantics
 
 ### `fastinfo.eqpop`
@@ -177,37 +214,26 @@ These do not need native code first. The goal is:
 
 ## Native Kernel Scope
 
-### First implementation phase
+### Implemented kernel scope
 
-Implement the smallest set that gives a useful optimized runtime:
+The current optimized runtime includes:
 
 - scalar MI
 - scalar CMI
 - permutation / bootstrap MI
 - slice MI with OpenMP over columns
+- matched-column batched MI
+- conditional-per-condition CMI contributions
+- CMI slice
+- permutation MI slice
 - `eqpop`
 - `eqpop_sorted`
+- `eqpop_slice`
+- `eqpop_sorted_slice`
+- pairwise helper workflows built on sorted binning
 
-Public wrappers:
-
-- `fastinfo.calcinfo`
-- `fastinfo.calccmi`
-- `fastinfo.calcinfoperm`
-- `fastinfo.calcinfo_slice`
-- `fastinfo.eqpop`
-- `fastinfo.eqpop_sorted`
-
-### Later native extensions
-
-Add only after the first path is stable:
-
-- matched-column batched MI
-- conditional-per-condition outputs analogous to `calc_condcmi`
-- pairwise helper workflows
-- additional bootstrap or slice kernels if profiling justifies them
-
-The typed low-level MEX entrypoints may still exist internally, but should not
-be treated as the primary public API.
+The typed low-level MEX entrypoints exist only as internal implementation
+details. The public API remains the `fastinfo.*` wrapper layer.
 
 ## Proposed Repository Layout
 
@@ -251,10 +277,8 @@ python/src/simpleinfo/
     _fallback.py
 ```
 
-Python `fastinfo` can initially be a pure-Python or NumPy-compatible mirror of
-the optimized API shape, even if the first native implementation is MATLAB-only.
-That keeps the namespace stable while native acceleration strategy for Python is
-decided later.
+Python `fastinfo` is now a NumPy-first implementation with optional Numba
+acceleration.
 
 ## Python Runtime Plan
 
@@ -263,11 +287,9 @@ but should not introduce compiled-extension complexity in the first phase.
 
 Recommended staged approach:
 
-1. implement `simpleinfo.fastinfo` with pure NumPy kernels and the same public
-   signatures as MATLAB
-2. add optional Numba acceleration for the hot counting and permutation paths
-3. keep Numba optional rather than mandatory, following the pattern used in
-   `gcmi`
+1. keep `simpleinfo.fastinfo` API-matched with MATLAB
+2. use NumPy as the baseline implementation
+3. use optional Numba acceleration for the hot counting and permutation paths
 4. defer any Python C++ extension or shared native-core binding until there is a
    demonstrated need for it
 
@@ -308,6 +330,7 @@ Core design:
 - heap-backed scratch buffers
 - OpenMP over columns or permutation replicates
 - dense histogram counting for MI and CMI
+- zero-copy typed dispatch for MATLAB integer inputs on the main discrete kernels
 
 Likely internal modules:
 
