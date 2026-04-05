@@ -40,31 +40,50 @@ def _median_runtime(fn, repeats: int, warmup: int) -> float:
     return float(np.median(np.asarray(timings, dtype=np.float64)))
 
 
-def _dtype_mode_config(mode: str) -> dict[str, int]:
+def _resolve_regimes(mode: str, regimes: list[str] | None) -> list[str]:
+    if regimes:
+        return [str(regime).lower() for regime in regimes]
     mode = str(mode).lower()
     if mode == "quick":
+        return ["medium"]
+    if mode == "full":
+        return ["large"]
+    raise ValueError(f"Unsupported mode: {mode}")
+
+
+def _regime_config(regime: str) -> dict[str, int]:
+    regime = str(regime).lower()
+    if regime == "small":
+        return {
+            "ntrl": 256,
+            "nx": 128,
+            "nmatched": 128,
+            "nperm": 64,
+        }
+    if regime == "medium":
         return {
             "ntrl": 1024,
             "nx": 512,
             "nmatched": 512,
             "nperm": 128,
         }
-    if mode == "full":
+    if regime == "large":
         return {
-            "ntrl": 2048,
+            "ntrl": 4096,
             "nx": 2048,
             "nmatched": 1024,
             "nperm": 256,
         }
-    raise ValueError(f"Unsupported mode: {mode}")
+    raise ValueError(f"Unsupported regime: {regime}")
 
 
-def _build_dtype_inputs(mode: str) -> dict[str, Any]:
-    cfg = _dtype_mode_config(mode)
+def _build_dtype_inputs(regime: str) -> dict[str, Any]:
+    cfg = _regime_config(regime)
     shared = discrete_vector(cfg["ntrl"], YB, 9001)
     z = discrete_vector(cfg["ntrl"], ZB, 9002)
     y = (shared + z + discrete_vector(cfg["ntrl"], 2, 9003)) % YB
     return {
+        "regime": regime,
         "config": cfg,
         "x_slice": (
             shared[:, None]
@@ -144,6 +163,7 @@ def _benchmark_cases(inputs: dict[str, np.ndarray], dtype_name: str) -> list[dic
 
 def run_python_dtype_benchmarks(
     mode: str,
+    regimes: list[str] | None,
     thread_counts: list[int],
     repeats: int | None,
     warmup: int,
@@ -159,6 +179,7 @@ def run_python_dtype_benchmarks(
             "available": False,
             "reason": "Python dtype scaling benchmarks require the Numba backend.",
             "mode": mode,
+            "regimes": _resolve_regimes(mode, regimes),
             "thread_counts": [int(x) for x in thread_counts],
             "repeats": None if repeats is None else int(repeats),
             "warmup": int(warmup),
@@ -168,54 +189,60 @@ def run_python_dtype_benchmarks(
             "cases": [],
         }
 
-    inputs = _build_dtype_inputs(mode)
+    regime_names = _resolve_regimes(mode, regimes)
     original_threads = simpleinfo.fastinfo.set_threads(thread_counts[0])
     cases: list[dict[str, Any]] = []
+    configs: list[dict[str, Any]] = []
     try:
-        for dtype_name in dtypes:
-            specs = _benchmark_cases(inputs, dtype_name)
-            measurements_per_dtype = sum(len(thread_counts) if spec["kind"] == "threaded" else 1 for spec in specs)
-            target_seconds_per_measurement = target_seconds_per_dtype / float(measurements_per_dtype)
-            for spec in _benchmark_cases(inputs, dtype_name):
-                if spec["kind"] == "threaded":
-                    baseline = None
-                    baseline_time = None
-                    for threads in thread_counts:
-                        simpleinfo.fastinfo.set_threads(int(threads))
-                        current = np.asarray(spec["fn"](), dtype=np.float64)
+        for regime_name in regime_names:
+            inputs = _build_dtype_inputs(regime_name)
+            configs.append({"regime": regime_name, **inputs["config"]})
+            for dtype_name in dtypes:
+                specs = _benchmark_cases(inputs, dtype_name)
+                measurements_per_dtype = sum(len(thread_counts) if spec["kind"] == "threaded" else 1 for spec in specs)
+                target_seconds_per_measurement = target_seconds_per_dtype / float(measurements_per_dtype)
+                for spec in specs:
+                    if spec["kind"] == "threaded":
+                        baseline = None
+                        baseline_time = None
+                        for threads in thread_counts:
+                            simpleinfo.fastinfo.set_threads(int(threads))
+                            current = np.asarray(spec["fn"](), dtype=np.float64)
+                            repeats_used = repeats if repeats is not None else _calibrated_repeats(
+                                spec["fn"], warmup, target_seconds_per_measurement, max_repeats
+                            )
+                            current_time = _median_runtime(spec["fn"], repeats_used, warmup)
+                            if baseline is None:
+                                baseline = current
+                                baseline_time = current_time
+                            cases.append({
+                                "regime": regime_name,
+                                "dtype": dtype_name,
+                                "operation": spec["operation"],
+                                "kind": spec["kind"],
+                                "threads": int(threads),
+                                "repeats": int(repeats_used),
+                                "seconds": current_time,
+                                "speedup_vs_1": float(baseline_time / current_time),
+                                "max_abs_diff_vs_1": float(np.max(np.abs(current - baseline))),
+                            })
+                    else:
+                        simpleinfo.fastinfo.set_threads(int(thread_counts[0]))
                         repeats_used = repeats if repeats is not None else _calibrated_repeats(
                             spec["fn"], warmup, target_seconds_per_measurement, max_repeats
                         )
                         current_time = _median_runtime(spec["fn"], repeats_used, warmup)
-                        if baseline is None:
-                            baseline = current
-                            baseline_time = current_time
                         cases.append({
+                            "regime": regime_name,
                             "dtype": dtype_name,
                             "operation": spec["operation"],
                             "kind": spec["kind"],
-                            "threads": int(threads),
+                            "threads": int(thread_counts[0]),
                             "repeats": int(repeats_used),
                             "seconds": current_time,
-                            "speedup_vs_1": float(baseline_time / current_time),
-                            "max_abs_diff_vs_1": float(np.max(np.abs(current - baseline))),
+                            "speedup_vs_1": 1.0,
+                            "max_abs_diff_vs_1": 0.0,
                         })
-                else:
-                    simpleinfo.fastinfo.set_threads(int(thread_counts[0]))
-                    repeats_used = repeats if repeats is not None else _calibrated_repeats(
-                        spec["fn"], warmup, target_seconds_per_measurement, max_repeats
-                    )
-                    current_time = _median_runtime(spec["fn"], repeats_used, warmup)
-                    cases.append({
-                        "dtype": dtype_name,
-                        "operation": spec["operation"],
-                        "kind": spec["kind"],
-                        "threads": int(thread_counts[0]),
-                        "repeats": int(repeats_used),
-                        "seconds": current_time,
-                        "speedup_vs_1": 1.0,
-                        "max_abs_diff_vs_1": 0.0,
-                    })
     finally:
         simpleinfo.fastinfo.set_threads(int(original_threads))
 
@@ -224,13 +251,14 @@ def run_python_dtype_benchmarks(
         "backend": backend,
         "available": True,
         "mode": mode,
+        "regimes": regime_names,
         "thread_counts": [int(x) for x in thread_counts],
         "repeats": None if repeats is None else int(repeats),
         "warmup": int(warmup),
         "target_seconds_per_dtype": float(target_seconds_per_dtype),
         "max_repeats": int(max_repeats),
         "dtypes": list(dtypes),
-        "config": inputs["config"],
+        "configs": configs,
         "cases": cases,
     }
 
@@ -238,6 +266,7 @@ def run_python_dtype_benchmarks(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=("quick", "full"), default="quick")
+    parser.add_argument("--regimes", nargs="+", default=None)
     parser.add_argument("--thread-counts", type=int, nargs="+", default=[1, 2, 4])
     parser.add_argument("--repeats", type=int, default=None)
     parser.add_argument("--warmup", type=int, default=1)
@@ -249,6 +278,7 @@ def main() -> None:
 
     results = run_python_dtype_benchmarks(
         args.mode,
+        args.regimes,
         args.thread_counts,
         args.repeats,
         args.warmup,
