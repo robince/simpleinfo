@@ -1,5 +1,6 @@
 import sys
 import unittest
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,15 @@ if str(PYTHON_SRC) not in sys.path:
     sys.path.insert(0, str(PYTHON_SRC))
 
 import simpleinfo
+
+try:
+    from simpleinfo.fastinfo import _api as fastinfo_api
+    from simpleinfo.fastinfo import _fallback as fastinfo_fallback
+    from simpleinfo.fastinfo import _numba as fastinfo_numba
+except Exception:  # pragma: no cover - optional backend import
+    fastinfo_api = None
+    fastinfo_fallback = None
+    fastinfo_numba = None
 
 
 def entropy_from_probabilities(probabilities):
@@ -118,6 +128,17 @@ class SimpleInfoTests(unittest.TestCase):
 
         self.assertAlmostEqual(info, expected)
 
+    def test_calccondcmi_weighted_contributions_sum_to_total(self):
+        x = np.array([0, 0, 1, 1, 0, 0, 1, 1])
+        y = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+        z = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        k = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+
+        total, contributions = simpleinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2)
+
+        self.assertAlmostEqual(total, 0.5)
+        self.assertAlmostEqual(float(np.sum(contributions)), total)
+
     def test_out_of_range_samples_are_rejected(self):
         with self.assertRaisesRegex(ValueError, r"x must take values in \[0, 1\]"):
             simpleinfo.calcinfo(np.array([0, 2]), 2, np.array([0, 1]), 2, bias=False)
@@ -136,6 +157,243 @@ class SimpleInfoTests(unittest.TestCase):
         self.assertEqual(rebinned.shape, x.shape)
         self.assertGreaterEqual(rebinned.min(), 0)
         self.assertLessEqual(rebinned.max(), 1)
+
+    def test_numbase2dec_and_numdec2base_roundtrip(self):
+        words = np.array([[2, 0, 1], [1, 2, 0], [2, 1, 1]])
+        decimals = simpleinfo.numbase2dec(words, 3)
+        roundtrip = simpleinfo.numdec2base(decimals, 3)
+
+        np.testing.assert_array_equal(decimals, np.array([23, 7, 10]))
+        np.testing.assert_array_equal(roundtrip, words)
+
+    def test_numdec2base_handles_exact_powers_of_base(self):
+        digits = simpleinfo.numdec2base(np.array([8, 9]), 2)
+        np.testing.assert_array_equal(
+            digits,
+            np.array([[1, 1], [0, 0], [0, 0], [0, 1]]),
+        )
+
+    def test_numdec2base_rejects_explicit_width_that_is_too_small(self):
+        with self.assertRaisesRegex(ValueError, "m is too small"):
+            simpleinfo.numdec2base(np.array([8]), 2, m=3)
+
+    def test_fastinfo_calcinfo_matches_reference_unbiased(self):
+        x = np.array([0, 0, 1, 1])
+        y = np.array([0, 0, 1, 1])
+
+        actual = simpleinfo.fastinfo.calcinfo(x, 2, y, 2)
+        expected = simpleinfo.calcinfo(x, 2, y, 2, bias=False)
+        self.assertAlmostEqual(actual, expected)
+
+    def test_fastinfo_calccmi_matches_reference_unbiased(self):
+        x = np.array([0, 0, 1, 1, 0, 0, 1, 1])
+        y = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+        z = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+
+        actual = simpleinfo.fastinfo.calccmi(x, 2, y, 2, z, 2)
+        expected = simpleinfo.calccmi(x, 2, y, 2, z, 2, bias=False)
+        self.assertAlmostEqual(actual, expected)
+
+    def test_fastinfo_calcinfo_slice_matches_columnwise_reference(self):
+        x = np.array([
+            [0, 0, 1, 1],
+            [0, 1, 0, 1],
+            [1, 1, 0, 0],
+        ])
+        y = np.array([0, 0, 1, 1])
+
+        actual = simpleinfo.fastinfo.calcinfo_slice(x, 2, y, 2)
+        expected = np.array([
+            simpleinfo.calcinfo(x[0], 2, y, 2, bias=False),
+            simpleinfo.calcinfo(x[1], 2, y, 2, bias=False),
+            simpleinfo.calcinfo(x[2], 2, y, 2, bias=False),
+        ])
+        np.testing.assert_allclose(actual, expected)
+
+    def test_fastinfo_calcinfomatched_matches_reference(self):
+        x = np.array([[0, 0, 1, 1], [0, 1, 0, 1], [1, 1, 0, 0]])
+        y = np.array([[0, 0, 1, 1], [1, 0, 1, 0], [1, 1, 0, 0]])
+
+        actual = simpleinfo.fastinfo.calcinfomatched(x, 2, y, 2)
+        expected = simpleinfo.calcinfomatched(x.T, 2, y.T, 2, bias=False)
+        np.testing.assert_allclose(actual, expected)
+
+    def test_fastinfo_calccondcmi_matches_reference(self):
+        x = np.array([0, 0, 1, 1, 0, 0, 1, 1])
+        y = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+        z = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        k = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+
+        actual_total, actual_contrib = simpleinfo.fastinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2)
+        expected_total, expected_contrib = simpleinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2)
+
+        self.assertAlmostEqual(actual_total, expected_total)
+        np.testing.assert_allclose(actual_contrib, expected_contrib)
+
+    def test_fastinfo_calccmi_slice_matches_columnwise_reference(self):
+        x = np.array([[0, 0, 1, 1], [0, 1, 0, 1], [1, 1, 0, 0]])
+        y = np.array([0, 0, 1, 1])
+        z = np.array([0, 1, 0, 1])
+
+        actual = simpleinfo.fastinfo.calccmi_slice(x, 2, y, 2, z, 2)
+        expected = simpleinfo.calccmi_slice(x.T, 2, y, 2, z, 2, bias=False)
+        np.testing.assert_allclose(actual, expected)
+
+    def test_fastinfo_eqpop_sorted_preserves_ties(self):
+        x = np.array([0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            xb = simpleinfo.fastinfo.eqpop_sorted(x, 3)
+        np.testing.assert_array_equal(xb, np.array([0, 0, 1, 1, 2, 2]))
+
+    def test_fastinfo_eqpop_errors_when_ties_make_requested_bins_impossible(self):
+        x = np.array([0.0, 0.0, 0.0, 1.0, 1.0, 1.0])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with self.assertRaisesRegex(ValueError, "Cannot form the requested number of equal-population bins"):
+                simpleinfo.fastinfo.eqpop(x, 4)
+
+    def test_fastinfo_eqpop_warns_on_heavily_quantized_input(self):
+        x = np.array([0.0, 0.0, 1.0, 1.0, 2.0, 2.0])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            simpleinfo.fastinfo.eqpop_sorted(x, 3)
+        self.assertTrue(any("heavily repeated values" in str(w.message) for w in caught))
+
+    def test_fastinfo_eqpop_slice_returns_nan_for_failed_pages(self):
+        x = np.array([
+            [10.0, 0.0, 20.0, 30.0, 11.0, 1.0, 21.0, 31.0],
+            [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        ])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out = simpleinfo.fastinfo.eqpop_slice(x, 4)
+        np.testing.assert_array_equal(out[0], np.array([1, 0, 2, 3, 1, 0, 2, 3], dtype=float))
+        np.testing.assert_array_equal(out[1], np.array([0, 0, 1, 1, 2, 2, 3, 3], dtype=float))
+        self.assertTrue(np.all(np.isnan(out[2])))
+
+    def test_fastinfo_eqpop_sorted_slice_returns_nan_for_failed_pages(self):
+        x = np.array([
+            [0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0],
+            [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        ])
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            out = simpleinfo.fastinfo.eqpop_sorted_slice(x, 4)
+        np.testing.assert_array_equal(out[0], np.array([0, 0, 1, 1, 2, 2, 3, 3], dtype=float))
+        np.testing.assert_array_equal(out[1], np.array([0, 0, 1, 1, 2, 2, 3, 3], dtype=float))
+        self.assertTrue(np.all(np.isnan(out[2])))
+
+    def test_fastinfo_calcinfoperm_seed_is_reproducible(self):
+        x = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+        y = np.array([0, 1, 0, 1, 0, 1, 0, 1])
+        a = simpleinfo.fastinfo.calcinfoperm(x, 2, y, 2, 8, seed=123)
+        b = simpleinfo.fastinfo.calcinfoperm(x, 2, y, 2, 8, seed=123)
+        np.testing.assert_allclose(a, b)
+
+    def test_fastinfo_calcinfoperm_slice_seed_is_reproducible(self):
+        x = np.array([[0, 0, 1, 1], [0, 1, 0, 1], [1, 1, 0, 0]])
+        y = np.array([0, 1, 0, 1])
+        a = simpleinfo.fastinfo.calcinfoperm_slice(x, 2, y, 2, 8, seed=123)
+        b = simpleinfo.fastinfo.calcinfoperm_slice(x, 2, y, 2, 8, seed=123)
+        np.testing.assert_allclose(a, b)
+
+    def test_fastinfo_slice_apis_require_c_contiguous_trial_last_matrices(self):
+        x = np.asfortranarray(np.array([[0, 0, 1, 1], [0, 1, 0, 1]]))
+        y = np.array([0, 0, 1, 1])
+
+        with self.assertRaisesRegex(ValueError, "C-contiguous"):
+            simpleinfo.fastinfo.calcinfo_slice(x, 2, y, 2)
+
+    def test_fastinfo_calcpairwiseinfo_matches_reference(self):
+        x = np.array([0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 2.0, 2.1, 2.2])
+        y = np.array([0, 0, 0, 1, 1, 1, 2, 2, 2])
+
+        actual = simpleinfo.fastinfo.calcpairwiseinfo(x, 3, y, 3)
+        expected = simpleinfo.calcpairwiseinfo(x, 3, y, 3)
+        np.testing.assert_allclose(actual, expected)
+
+    def test_fastinfo_calcinfoperm_mean_is_near_zero_for_independent_inputs(self):
+        x = np.repeat([0, 1], 128)
+        y = np.tile([0, 1], 128)
+
+        observed = simpleinfo.fastinfo.calcinfo(x, 2, y, 2)
+        null = simpleinfo.fastinfo.calcinfoperm(x, 2, y, 2, 128, seed=123)
+
+        self.assertAlmostEqual(observed, 0.0)
+        self.assertEqual(null.shape, (128,))
+        self.assertTrue(np.all(np.isfinite(null)))
+        self.assertTrue(np.all(null >= -1e-12))
+        self.assertLess(float(np.mean(null)), 0.02)
+
+    @unittest.skipUnless(fastinfo_api is not None and fastinfo_api.BACKEND == "numba", "Numba backend not active")
+    def test_numba_backend_matches_numpy_fallback(self):
+        x = np.array([0, 0, 1, 1, 0, 1, 0, 1])
+        y = np.array([0, 1, 0, 1, 0, 1, 0, 1])
+        z = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        X = np.vstack((x, y, z, x))
+        cont = np.array([0.0, 0.1, 1.0, 1.1, 2.0, 2.1, 3.0, 3.1])
+
+        self.assertAlmostEqual(
+            fastinfo_numba.calcinfo(x, 2, y, 2),
+            fastinfo_fallback.calcinfo(x, 2, y, 2),
+        )
+        self.assertAlmostEqual(
+            fastinfo_numba.calccmi(x, 2, y, 2, z, 2),
+            fastinfo_fallback.calccmi(x, 2, y, 2, z, 2),
+        )
+        np.testing.assert_allclose(
+            fastinfo_numba.calcinfomatched(X, 2, X, 2),
+            fastinfo_fallback.calcinfomatched(X, 2, X, 2),
+        )
+        np.testing.assert_allclose(
+            fastinfo_numba.calcinfo_slice(X, 2, y, 2),
+            fastinfo_fallback.calcinfo_slice(X, 2, y, 2),
+        )
+        np.testing.assert_allclose(
+            fastinfo_numba.calccmi_slice(X, 2, y, 2, z, 2),
+            fastinfo_fallback.calccmi_slice(X, 2, y, 2, z, 2),
+        )
+        np.testing.assert_allclose(
+            fastinfo_numba.calcinfoperm(x, 2, y, 2, 12, seed=123),
+            fastinfo_fallback.calcinfoperm(x, 2, y, 2, 12, seed=123),
+        )
+        np.testing.assert_allclose(
+            fastinfo_numba.calcinfoperm_slice(X, 2, y, 2, 12, seed=123),
+            fastinfo_fallback.calcinfoperm_slice(X, 2, y, 2, 12, seed=123),
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            np.testing.assert_array_equal(
+                fastinfo_numba.eqpop(cont, 4),
+                fastinfo_fallback.eqpop(cont, 4),
+            )
+            np.testing.assert_array_equal(
+                fastinfo_numba.eqpop_sorted(cont, 4),
+                fastinfo_fallback.eqpop_sorted(cont, 4),
+            )
+            slice_cont = np.vstack((
+                cont,
+                np.arange(cont.size, dtype=float),
+                np.array([0, 0, 0, 1, 1, 1, 1, 1], dtype=float),
+            ))
+            np.testing.assert_allclose(
+                fastinfo_numba.eqpop_slice(slice_cont, 4),
+                fastinfo_fallback.eqpop_slice(slice_cont, 4),
+                equal_nan=True,
+            )
+            np.testing.assert_allclose(
+                fastinfo_numba.eqpop_sorted_slice(slice_cont, 4),
+                fastinfo_fallback.eqpop_sorted_slice(slice_cont, 4),
+                equal_nan=True,
+            )
+
+    @unittest.skipUnless(fastinfo_api is not None and fastinfo_api.BACKEND == "numba", "Numba backend not active")
+    def test_numba_backend_rejects_per_call_threads(self):
+        with self.assertRaisesRegex(ValueError, "Per-call threads control is unsupported"):
+            simpleinfo.fastinfo.calcinfo(np.array([0, 1]), 2, np.array([0, 1]), 2, threads=2)
 
 
 if __name__ == "__main__":

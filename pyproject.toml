@@ -9,8 +9,14 @@ description = "Simple calculation of binned information theoretic quantities."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "numba>=0.60.0",
     "numpy",
     "scipy",
+]
+
+[project.optional-dependencies]
+opt = [
+    "numba>=0.60",
 ]
 
 [tool.hatch.build.targets.wheel]

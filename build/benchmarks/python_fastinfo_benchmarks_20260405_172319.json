@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-04-05T17:23:19+0100",
+  "backend": "numba",
+  "mode": "quick",
+  "repeats": 1,
+  "cases": [
+    {
+      "name": "calcinfo_scalar",
+      "fast": 0.06845041608903557,
+      "reference": 8.329201955348253e-05
+    },
+    {
+      "name": "calcinfo_slice",
+      "fast": 0.00808695808518678,
+      "reference": 0.006310250028036535
+    },
+    {
+      "name": "calcinfomatched",
+      "fast": 0.0034738749964162707,
+      "reference": 0.006390166934579611
+    },
+    {
+      "name": "calccmi_slice",
+      "fast": 0.0035711670061573386,
+      "reference": 0.010029041091911495
+    },
+    {
+      "name": "calcinfoperm",
+      "fast": 0.003489707945846021,
+      "reference": 0.0044845829252153635
+    },
+    {
+      "name": "calcinfoperm_slice",
+      "fast": 0.012834874913096428,
+      "reference": 0.22460166702512652
+    },
+    {
+      "name": "eqpop_sorted",
+      "fast": 5.927077124943025
+    },
+    {
+      "name": "eqpop_slice",
+      "fast": 1.5142415420850739,
+      "reference": 7.627268207957968
+    },
+    {
+      "name": "eqpop_sorted_slice",
+      "fast": 1.57443408400286,
+      "reference": 7.552730540977791
+    }
+  ]
+}

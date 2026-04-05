@@ -16,10 +16,65 @@ def entropy(p):
     return float(-np.sum(probabilities[nonzero] * np.log2(probabilities[nonzero])))
 
 
+def numbase2dec(x, b):
+    """Convert base-b words arranged as [M, N] into decimal integers."""
+    b = _validate_bin_count(b, "b")
+    digits = np.asarray(x)
+    if digits.size == 0:
+        raise ValueError("x must contain at least one digit.")
+    if digits.ndim == 1:
+        digits = digits.reshape(-1, 1)
+    elif digits.ndim != 2:
+        raise ValueError("x must be a one- or two-dimensional array.")
+
+    rounded = np.rint(digits)
+    if not np.allclose(digits, rounded) or np.any(rounded < 0) or np.any(rounded >= b):
+        raise ValueError("x must contain integer digits in the range 0:(b-1).")
+
+    digits = rounded.astype(np.int64)
+    powers = np.power(int(b), np.arange(digits.shape[0] - 1, -1, -1, dtype=np.int64), dtype=np.int64)
+    return powers @ digits
+
+
+def numdec2base(d, b, m=None):
+    """Convert decimal integers into base-b words arranged as [M, N]."""
+    b = _validate_bin_count(b, "b")
+    values = np.asarray(d)
+    if values.size == 0:
+        raise ValueError("d must contain at least one integer.")
+
+    flat = np.rint(values.reshape(-1))
+    if not np.allclose(values.reshape(-1), flat) or np.any(flat < 0):
+        raise ValueError("d must contain non-negative integers.")
+
+    flat = flat.astype(np.int64)
+    required_digits = _required_base_digits(int(np.max(flat)), int(b))
+    if m is None:
+        m = required_digits
+    else:
+        m = _validate_bin_count(m, "m")
+        if m < required_digits:
+            raise ValueError("m is too small to represent the largest value in d.")
+
+    powers = np.power(int(b), np.arange(m - 1, -1, -1, dtype=np.int64), dtype=np.int64)
+    return ((flat[np.newaxis, :] // powers[:, np.newaxis]) % int(b)).astype(np.int64, copy=False)
+
+
 def _validate_bin_count(nbins, name):
     if not isinstance(nbins, (int, np.integer)) or nbins < 1:
         raise ValueError(f"{name} must be a positive integer.")
     return int(nbins)
+
+
+def _required_base_digits(max_value, base):
+    max_value = int(max_value)
+    if max_value < 0:
+        raise ValueError("max_value must be non-negative.")
+    digits = 1
+    while max_value >= base:
+        max_value //= base
+        digits += 1
+    return digits
 
 
 def _as_discrete_samples(values, nbins, name):
@@ -195,6 +250,190 @@ def calcinfoperm(x, xb, y, yb, nperm, bias=True, beta=0.0):
         iperm = iperm - mmbiasinfo(xb, yb, x.size)
 
     return iperm
+
+
+def calcinfomatched(x, xb, y, yb, bias=True, beta=0.0):
+    """Column-wise MI for matched X/Y pages."""
+    xb = _validate_bin_count(xb, "xb")
+    yb = _validate_bin_count(yb, "yb")
+    x = np.asarray(x)
+    y = np.asarray(y)
+    if x.ndim != 2 or y.ndim != 2:
+        raise ValueError("x and y must be two-dimensional arrays.")
+    if x.shape != y.shape:
+        raise ValueError("x and y must have the same shape.")
+
+    out = np.zeros(x.shape[1], dtype=float)
+    for col in range(x.shape[1]):
+        out[col] = calcinfo(x[:, col], xb, y[:, col], yb, bias=bias, beta=beta)
+    return out
+
+
+def calccondcmi(x, xb, y, yb, z, zb, k, kb):
+    """Conditional MI plus weighted per-K contributions under global normalization."""
+    xb = _validate_bin_count(xb, "xb")
+    yb = _validate_bin_count(yb, "yb")
+    zb = _validate_bin_count(zb, "zb")
+    kb = _validate_bin_count(kb, "kb")
+
+    x = _as_discrete_samples(x, xb, "x")
+    y = _as_discrete_samples(y, yb, "y")
+    z = _as_discrete_samples(z, zb, "z")
+    k = _as_discrete_samples(k, kb, "k")
+    if x.size != y.size or x.size != z.size or x.size != k.size:
+        raise ValueError("calccondcmi: Number of trials must match.")
+
+    ntrl = x.size
+    counts = _joint_counts_3d(x, xb, y, yb, z, zb) / float(ntrl)
+    total = (
+        entropy(np.sum(counts, axis=1))
+        + entropy(np.sum(counts, axis=0))
+        - entropy(counts)
+        - entropy(np.sum(np.sum(counts, axis=0), axis=0))
+    )
+
+    contributions = np.zeros(kb, dtype=float)
+    for ki in range(kb):
+        mask = k == ki
+        if not np.any(mask):
+            continue
+        counts_k = _joint_counts_3d(x[mask], xb, y[mask], yb, z[mask], zb) / float(ntrl)
+        contributions[ki] = (
+            entropy(np.sum(counts_k, axis=1))
+            + entropy(np.sum(counts_k, axis=0))
+            - entropy(counts_k)
+            - entropy(np.sum(np.sum(counts_k, axis=0), axis=0))
+        )
+    return total, contributions
+
+
+def calccmi_slice(x, xb, y, yb, z, zb, bias=True, beta=0.0):
+    """Column-wise conditional MI for matched X pages."""
+    xb = _validate_bin_count(xb, "xb")
+    yb = _validate_bin_count(yb, "yb")
+    zb = _validate_bin_count(zb, "zb")
+    x = np.asarray(x)
+    if x.ndim != 2:
+        raise ValueError("x must be a two-dimensional array.")
+    y = np.asarray(y).reshape(-1)
+    z = np.asarray(z).reshape(-1)
+    if x.shape[0] != y.size or x.shape[0] != z.size:
+        raise ValueError("x must have shape [Ntrl, Nx], y and z must have length Ntrl.")
+
+    out = np.zeros(x.shape[1], dtype=float)
+    for col in range(x.shape[1]):
+        out[col] = calccmi(x[:, col], xb, y, yb, z, zb, bias=bias, beta=beta)
+    return out
+
+
+def calcinfoperm_slice(x, xb, y, yb, nperm, bias=True, beta=0.0):
+    """Permutation MI null samples for each X page against a fixed Y."""
+    x = np.asarray(x)
+    if x.ndim != 2:
+        raise ValueError("x must be a two-dimensional array.")
+    y = np.asarray(y).reshape(-1)
+    if x.shape[0] != y.size:
+        raise ValueError("x must have shape [Ntrl, Nx] and y must have length Ntrl.")
+
+    out = np.zeros((int(nperm), x.shape[1]), dtype=float)
+    for col in range(x.shape[1]):
+        out[:, col] = calcinfoperm(x[:, col], xb, y, yb, nperm, bias=bias, beta=beta)
+    return out
+
+
+def calcpairwiseinfo(x, xb, y, yb, bias=False):
+    """Pairwise binary MI after pair-specific equal-population binning."""
+    xb = _validate_bin_count(xb, "xb")
+    yb = _validate_bin_count(yb, "yb")
+    x = np.asarray(x, dtype=float).reshape(-1)
+    y = _as_discrete_samples(y, yb, "y")
+    if x.size != y.size:
+        raise ValueError("calcpairwiseinfo: Number of trials must match.")
+
+    order = np.argsort(x, kind="stable")
+    xs = x[order]
+    ys = y[order]
+    pair_values = []
+    for yi in range(yb - 1):
+        iidx = ys == yi
+        for yj in range(yi + 1, yb):
+            mask = iidx | (ys == yj)
+            px = xs[mask]
+            py = np.where(ys[mask] == yi, 0, 1)
+            qpx = _eqpop_sorted_labels_reference(px, xb)
+            pair_values.append(calcinfo(qpx, xb, py, 2, bias=bias, beta=0.0))
+    return np.asarray(pair_values, dtype=float)
+
+
+def calcpairwiseinfo_slice(x, xb, y, yb, bias=False):
+    """Pairwise binary MI for each X page."""
+    x = np.asarray(x, dtype=float)
+    if x.ndim != 2:
+        raise ValueError("x must be a two-dimensional array.")
+    y = np.asarray(y).reshape(-1)
+    if x.shape[0] != y.size:
+        raise ValueError("x must have shape [Ntrl, Nx] and y must have length Ntrl.")
+
+    out = np.zeros((yb * (yb - 1) // 2, x.shape[1]), dtype=float)
+    for col in range(x.shape[1]):
+        out[:, col] = calcpairwiseinfo(x[:, col], xb, y, yb, bias=bias)
+    return out
+
+
+def _eqpop_sorted_labels_reference(sorted_values, nb):
+    sorted_values = np.asarray(sorted_values, dtype=float).reshape(-1)
+    nb = _validate_bin_count(nb, "nb")
+    if sorted_values.size < nb:
+        raise ValueError("nb cannot exceed the number of samples.")
+    if np.any(np.diff(sorted_values) < 0):
+        raise ValueError("sorted_values must be sorted in nondecreasing order.")
+
+    group_starts = np.concatenate((
+        np.array([0], dtype=np.int64),
+        np.nonzero(np.diff(sorted_values) != 0)[0].astype(np.int64) + 1,
+        np.array([sorted_values.size], dtype=np.int64),
+    ))
+    n_groups = group_starts.size - 1
+    if n_groups < nb:
+        raise ValueError(
+            "Cannot form the requested number of equal-population bins without splitting tied values."
+        )
+
+    ideal = sorted_values.size / float(nb)
+    dp = np.full((nb + 1, n_groups + 1), np.inf, dtype=float)
+    parent = np.full((nb + 1, n_groups + 1), -1, dtype=np.int64)
+    dp[0, 0] = 0.0
+    for b in range(1, nb + 1):
+        min_groups_used = b
+        max_groups_used = n_groups - (nb - b)
+        for g in range(min_groups_used, max_groups_used + 1):
+            for prev in range(b - 1, g):
+                prefix = dp[b - 1, prev]
+                if not np.isfinite(prefix):
+                    continue
+                count = group_starts[g] - group_starts[prev]
+                deviation = count - ideal
+                cost = prefix + deviation * deviation
+                if cost < dp[b, g]:
+                    dp[b, g] = cost
+                    parent[b, g] = prev
+
+    cuts = np.zeros(nb + 1, dtype=np.int64)
+    cuts[nb] = n_groups
+    g = n_groups
+    for b in range(nb, 0, -1):
+        prev = parent[b, g]
+        if prev < 0:
+            raise ValueError("Failed to reconstruct equal-population partition.")
+        cuts[b - 1] = prev
+        g = prev
+
+    labels = np.zeros(sorted_values.size, dtype=np.int64)
+    for bin_index in range(nb):
+        start = group_starts[cuts[bin_index]]
+        stop = group_starts[cuts[bin_index + 1]]
+        labels[start:stop] = bin_index
+    return labels
 
 
 def eqpopbin(x, nb, return_edges=False):
