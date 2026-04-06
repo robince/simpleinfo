@@ -190,9 +190,7 @@ def run_python_dtype_benchmarks(
         }
 
     regime_names = _resolve_regimes(mode, regimes)
-    from numba import get_num_threads
-
-    original_threads = int(get_num_threads())
+    original_threads = simpleinfo.fastinfo.get_threads()
     simpleinfo.fastinfo.set_threads(thread_counts[0])
     cases: list[dict[str, Any]] = []
     configs: list[dict[str, Any]] = []

@@ -15,6 +15,7 @@ from ._api import (
     eqpop_slice,
     eqpop_sorted,
     eqpop_sorted_slice,
+    get_threads,
     set_threads,
 )
 
@@ -33,5 +34,6 @@ __all__ = [
     "eqpop_slice",
     "eqpop_sorted",
     "eqpop_sorted_slice",
+    "get_threads",
     "set_threads",
 ]

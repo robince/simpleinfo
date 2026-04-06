@@ -17,7 +17,7 @@ modern `buildtool`-based structure used in `gcmi`.
 Install from the repository root:
 
 ```bash
-uv pip install -e .
+python -m pip install -e .
 ```
 
 Run the Python tests from the repository root:
@@ -48,7 +48,18 @@ The public optimized Python API includes:
 - `simpleinfo.fastinfo.eqpop_sorted_slice`
 - `simpleinfo.fastinfo.calcpairwiseinfo`
 - `simpleinfo.fastinfo.calcpairwiseinfo_slice`
+- `simpleinfo.fastinfo.get_threads`
 - `simpleinfo.fastinfo.set_threads`
+
+`simpleinfo.calccondcmi` and `simpleinfo.fastinfo.calccondcmi` return
+`(total, contributions)`, where `contributions[k]` is the globally weighted
+contribution from condition `K == k` and `total == contributions.sum()`. In
+other words, the returned total is the decomposition over both `Z` and `K`, not
+just `I(X;Y|Z)`.
+
+`simpleinfo.fastinfo.set_threads(n)` returns the previous global thread count
+for the active backend. `simpleinfo.fastinfo.get_threads()` returns the current
+global thread count, or `None` when the fallback backend is active.
 
 Python `fastinfo` accepts integer label arrays. Numba can specialize kernels to
 the input dtype automatically, but some validated Python paths may still
@@ -100,6 +111,9 @@ The public optimized MATLAB API lives under:
 - `fastinfo.eqpop_sorted_slice`
 - `fastinfo.calcpairwiseinfo`
 - `fastinfo.calcpairwiseinfo_slice`
+
+`calccondcmi` and `fastinfo.calccondcmi` return `[I, IK]`, where `IK(ki)` is
+the globally weighted contribution for `K == ki - 1` and `I == sum(IK)`.
 
 For the discrete-information kernels, the intended fast MATLAB inputs are
 integer label arrays:

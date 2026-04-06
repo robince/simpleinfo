@@ -224,7 +224,7 @@ The current optimized runtime includes:
 - permutation / bootstrap MI
 - slice MI with OpenMP over columns
 - matched-column batched MI
-- conditional-per-condition CMI contributions
+- conditional CMI decomposed into weighted per-condition `K` contributions
 - CMI slice
 - permutation MI slice
 - `eqpop`
@@ -235,6 +235,11 @@ The current optimized runtime includes:
 
 The typed low-level MEX entrypoints exist only as internal implementation
 details. The public API remains the `fastinfo.*` wrapper layer.
+
+For `calccondcmi`, both the reference and optimized paths return a total plus
+per-`K` contributions under the same global normalization. The returned total is
+the sum of those contributions, so it corresponds to the decomposition over
+both `Z` and `K`.
 
 ## Proposed Repository Layout
 

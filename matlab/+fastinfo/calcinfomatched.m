@@ -17,6 +17,8 @@ end
 
 nThreads = resolve_threads(opts.Threads);
 if exist('fastinfo_calcinfomatched_cpp', 'file') == 3
+    validate_native_integer_class(X, 'X');
+    validate_native_integer_class(Y, 'Y');
     I = fastinfo_calcinfomatched_cpp(X, double(xb), Y, double(yb), double(nThreads));
 else
     I = feval('calcinfomatched', X, xb, Y, yb, false, 0);

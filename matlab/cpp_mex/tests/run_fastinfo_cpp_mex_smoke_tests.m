@@ -94,13 +94,14 @@ assert(max(abs(actual(:) - expected(:))) < 1e-12);
 end
 
 function test_calccondcmi()
-x = int16([0 0 1 1 0 0 1 1]');
-y = int16([0 0 1 1 0 1 0 1]');
-z = int16([0 0 0 0 1 1 1 1]');
-k = int16([0 0 0 0 1 1 1 1]');
+x = int16([0 0 1 1 0 1 1 0 0 0 1 1 0 1 1 0]');
+y = int16([0 0 1 1 0 1 1 0 0 1 0 1 0 1 1 0]');
+z = int16([0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1]');
+k = int16([0 0 0 0 1 1 1 1 0 0 0 0 1 1 1 1]');
 [actual, contributions] = fastinfo_calccondcmi_cpp(x, 2, y, 2, z, 2, k, 2);
-assert(abs(actual - 0.5) < 1e-12);
-assert(abs(sum(contributions) - actual) < 1e-12);
+[expected, expectedContributions] = calccondcmi(x, 2, y, 2, z, 2, k, 2);
+assert(abs(actual - expected) < 1e-12);
+assert(max(abs(contributions(:) - expectedContributions(:))) < 1e-12);
 end
 
 function test_calccmi_slice()

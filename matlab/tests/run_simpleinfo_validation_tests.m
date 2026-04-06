@@ -79,10 +79,10 @@ assert(abs(actual - expected) < 1e-12);
 end
 
 function test_fastinfo_calccondcmi_matches_reference()
-x = int16([0 0 1 1 0 0 1 1]');
-y = int16([0 0 1 1 0 1 0 1]');
-z = int16([0 0 0 0 1 1 1 1]');
-k = int16([0 0 0 0 1 1 1 1]');
+x = int16([0 0 1 1 0 1 1 0 0 0 1 1 0 1 1 0]');
+y = int16([0 0 1 1 0 1 1 0 0 1 0 1 0 1 1 0]');
+z = int16([0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1]');
+k = int16([0 0 0 0 1 1 1 1 0 0 0 0 1 1 1 1]');
 [actual, actualK] = fastinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2);
 [expected, expectedK] = calccondcmi(x, 2, y, 2, z, 2, k, 2);
 assert(abs(actual - expected) < 1e-12);

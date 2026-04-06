@@ -17,6 +17,8 @@ end
 
 nThreads = resolve_threads(opts.Threads);
 if exist('fastinfo_calcinfo_slice_cpp', 'file') == 3
+    validate_native_integer_class(X, 'X');
+    validate_native_integer_class(y, 'y');
     I = fastinfo_calcinfo_slice_cpp(X, double(xb), y, double(yb), double(nThreads));
 else
     I = zeros(size(X, 2), 1);

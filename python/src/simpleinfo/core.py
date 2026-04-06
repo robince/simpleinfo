@@ -276,7 +276,7 @@ def calcinfomatched(x, xb, y, yb, bias=True, beta=0.0):
 
 
 def calccondcmi(x, xb, y, yb, z, zb, k, kb):
-    """Conditional MI plus weighted per-K contributions under global normalization."""
+    """Conditional MI given Z and K, plus weighted per-K contributions."""
     xb = _validate_bin_count(xb, "xb")
     yb = _validate_bin_count(yb, "yb")
     zb = _validate_bin_count(zb, "zb")
@@ -290,13 +290,6 @@ def calccondcmi(x, xb, y, yb, z, zb, k, kb):
         raise ValueError("calccondcmi: Number of trials must match.")
 
     ntrl = x.size
-    counts = _joint_counts_3d(x, xb, y, yb, z, zb) / float(ntrl)
-    total = (
-        entropy(np.sum(counts, axis=1))
-        + entropy(np.sum(counts, axis=0))
-        - entropy(counts)
-        - entropy(np.sum(np.sum(counts, axis=0), axis=0))
-    )
 
     contributions = np.zeros(kb, dtype=float)
     for ki in range(kb):
@@ -310,6 +303,7 @@ def calccondcmi(x, xb, y, yb, z, zb, k, kb):
             - entropy(counts_k)
             - entropy(np.sum(np.sum(counts_k, axis=0), axis=0))
         )
+    total = float(np.sum(contributions))
     return total, contributions
 
 

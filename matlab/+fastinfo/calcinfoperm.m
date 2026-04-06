@@ -19,6 +19,8 @@ end
 
 nThreads = resolve_threads(opts.Threads);
 if exist('fastinfo_calcinfoperm_cpp', 'file') == 3
+    validate_native_integer_class(x, 'x');
+    validate_native_integer_class(y, 'y');
     Iperm = fastinfo_calcinfoperm_cpp(x, double(xb), y, double(yb), double(nperm), double(nThreads), double(opts.Seed));
 else
     rng(opts.Seed, 'twister');

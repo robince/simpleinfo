@@ -76,3 +76,9 @@ def set_threads(threads):
     if hasattr(_impl, "set_threads"):
         return _impl.set_threads(threads)
     return None
+
+
+def get_threads():
+    if hasattr(_impl, "get_threads"):
+        return _impl.get_threads()
+    return None

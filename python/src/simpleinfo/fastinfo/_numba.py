@@ -795,6 +795,11 @@ def calcpairwiseinfo_slice(x, xb, y, yb, *, bias=False, validate=True):
 
 
 def set_threads(threads):
+    previous = int(get_num_threads())
     threads = max(1, int(threads))
     set_num_threads(threads)
-    return threads
+    return previous
+
+
+def get_threads():
+    return int(get_num_threads())

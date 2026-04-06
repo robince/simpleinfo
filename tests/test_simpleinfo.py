@@ -128,15 +128,23 @@ class SimpleInfoTests(unittest.TestCase):
         self.assertAlmostEqual(info, expected)
 
     def test_calccondcmi_weighted_contributions_sum_to_total(self):
-        x = np.array([0, 0, 1, 1, 0, 0, 1, 1])
-        y = np.array([0, 0, 1, 1, 0, 1, 0, 1])
-        z = np.array([0, 0, 0, 0, 1, 1, 1, 1])
-        k = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        x = np.array([0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0])
+        y = np.array([0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0])
+        z = np.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1])
+        k = np.array([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1])
 
         total, contributions = simpleinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2)
+        expected_contributions = np.zeros(2, dtype=float)
+        for ki in range(2):
+            mask = k == ki
+            expected_contributions[ki] = mask.mean() * simpleinfo.calccmi(
+                x[mask], 2, y[mask], 2, z[mask], 2, bias=False
+            )
+        expected_total = float(np.sum(expected_contributions))
 
-        self.assertAlmostEqual(total, 0.5)
+        self.assertAlmostEqual(total, expected_total)
         self.assertAlmostEqual(float(np.sum(contributions)), total)
+        np.testing.assert_allclose(contributions, expected_contributions)
 
     def test_out_of_range_samples_are_rejected(self):
         with self.assertRaisesRegex(ValueError, r"x must take values in \[0, 1\]"):
@@ -224,10 +232,10 @@ class SimpleInfoTests(unittest.TestCase):
         np.testing.assert_allclose(actual, expected)
 
     def test_fastinfo_calccondcmi_matches_reference(self):
-        x = np.array([0, 0, 1, 1, 0, 0, 1, 1])
-        y = np.array([0, 0, 1, 1, 0, 1, 0, 1])
-        z = np.array([0, 0, 0, 0, 1, 1, 1, 1])
-        k = np.array([0, 0, 0, 0, 1, 1, 1, 1])
+        x = np.array([0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0])
+        y = np.array([0, 0, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0])
+        z = np.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1])
+        k = np.array([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1])
 
         actual_total, actual_contrib = simpleinfo.fastinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2)
         expected_total, expected_contrib = simpleinfo.calccondcmi(x, 2, y, 2, z, 2, k, 2)
@@ -430,6 +438,25 @@ class SimpleInfoTests(unittest.TestCase):
     def test_numba_backend_rejects_per_call_threads(self):
         with self.assertRaisesRegex(ValueError, "Per-call threads control is unsupported"):
             simpleinfo.fastinfo.calcinfo(np.array([0, 1]), 2, np.array([0, 1]), 2, threads=2)
+
+    def test_fallback_thread_helpers_are_noop(self):
+        self.assertIsNone(fastinfo_fallback.get_threads())
+        self.assertIsNone(fastinfo_fallback.set_threads(4))
+
+    @unittest.skipUnless(fastinfo_api is not None and fastinfo_api.BACKEND == "numba", "Numba backend not active")
+    def test_numba_thread_helpers_support_save_and_restore(self):
+        before = simpleinfo.fastinfo.get_threads()
+        target = 1 if before != 1 else before
+        previous = simpleinfo.fastinfo.set_threads(target)
+        self.assertEqual(previous, before)
+        self.assertEqual(simpleinfo.fastinfo.get_threads(), target)
+        try:
+            previous = simpleinfo.fastinfo.set_threads(before)
+            self.assertEqual(previous, target)
+            self.assertEqual(simpleinfo.fastinfo.get_threads(), before)
+        finally:
+            simpleinfo.fastinfo.set_threads(before)
+        self.assertEqual(simpleinfo.fastinfo.get_threads(), before)
 
 
 if __name__ == "__main__":

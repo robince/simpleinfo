@@ -16,6 +16,8 @@ if opts.Validate
 end
 
 if exist('fastinfo_calcinfo_cpp', 'file') == 3
+    validate_native_integer_class(x, 'x');
+    validate_native_integer_class(y, 'y');
     I = fastinfo_calcinfo_cpp(x, double(xb), y, double(yb));
 else
     I = feval('calcinfo', x, xb, y, yb, false, 0);

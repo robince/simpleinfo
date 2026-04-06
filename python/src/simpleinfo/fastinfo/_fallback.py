@@ -490,3 +490,7 @@ def calcpairwiseinfo_slice(x, xb, y, yb, *, bias=False, validate=True):
 def set_threads(threads):
     del threads
     return None
+
+
+def get_threads():
+    return None
