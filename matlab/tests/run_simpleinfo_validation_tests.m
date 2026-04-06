@@ -10,6 +10,8 @@ tests = { ...
     @test_fastinfo_calccondcmi_matches_reference, ...
     @test_fastinfo_calcinfo_slice_matches_reference, ...
     @test_fastinfo_calccmi_slice_matches_reference, ...
+    @test_fastinfo_calcinfoperm_matches_reference_distribution, ...
+    @test_fastinfo_calcinfoperm_slice_matches_reference_distribution, ...
     @test_fastinfo_calcpairwiseinfo_matches_reference};
 
 for i = 1:numel(tests)
@@ -107,12 +109,51 @@ expected = calccmi_slice(x, 2, y, 2, z, 2, false, 0);
 assert(max(abs(actual(:) - expected(:))) < 1e-12);
 end
 
+function test_fastinfo_calcinfoperm_matches_reference_distribution()
+x = int16(repmat([0; 0; 1; 1], 64, 1));
+y = int16(repmat([0; 1; 0; 1], 64, 1));
+nperm = 256;
+actual = fastinfo.calcinfoperm(x, 2, y, 2, nperm, Seed=123);
+s = rng;
+cleanup = onCleanup(@() rng(s));
+rng(123, 'twister');
+expected = calcinfoperm(x, 2, y, 2, nperm, false, 0);
+assert_reference_distribution_close(actual, expected);
+end
+
+function test_fastinfo_calcinfoperm_slice_matches_reference_distribution()
+x = int16(repmat([0 0 1; 0 1 1; 1 0 0; 1 1 0], 64, 1));
+y = int16(repmat([0; 1; 0; 1], 64, 1));
+nperm = 192;
+actual = fastinfo.calcinfoperm_slice(x, 2, y, 2, nperm, Seed=123);
+s = rng;
+cleanup = onCleanup(@() rng(s));
+rng(123, 'twister');
+expected = calcinfoperm_slice(x, 2, y, 2, nperm, false, 0);
+assert(isequal(size(actual), size(expected)));
+for col = 1:size(actual, 2)
+    assert_reference_distribution_close(actual(:, col), expected(:, col));
+end
+end
+
 function test_fastinfo_calcpairwiseinfo_matches_reference()
 x = [0.1 0.2 0.3 1.0 1.1 1.2 2.0 2.1 2.2]';
 y = int16([0 0 0 1 1 1 2 2 2]');
 actual = fastinfo.calcpairwiseinfo(x, 3, y, 3);
 expected = calcpairwiseinfo(x, 3, y, 3);
 assert(max(abs(actual(:) - expected(:))) < 1e-12);
+end
+
+function assert_reference_distribution_close(actual, expected)
+assert(isequal(size(actual), size(expected)));
+assert(all(isfinite(actual(:))));
+assert(all(isfinite(expected(:))));
+meanTol = 0.02;
+stdTol = 0.03;
+assert(abs(mean(actual(:)) - mean(expected(:))) < meanTol, ...
+    'Permutation mean mismatch: actual=%g expected=%g', mean(actual(:)), mean(expected(:)));
+assert(abs(std(actual(:), 1) - std(expected(:), 1)) < stdTol, ...
+    'Permutation std mismatch: actual=%g expected=%g', std(actual(:), 1), std(expected(:), 1));
 end
 
 function assert_error_contains(fun, messageFragment)

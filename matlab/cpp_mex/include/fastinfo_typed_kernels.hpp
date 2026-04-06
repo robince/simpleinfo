@@ -444,18 +444,13 @@ inline void calc_cond_cmi(
     mwSize nTrials,
     double* total,
     double* contributions) {
+    std::vector<mwSize> pxyzk(km * xm * ym * zm, 0);
     std::vector<mwSize> pz(zm, 0);
     std::vector<mwSize> pxz(xm * zm, 0);
     std::vector<mwSize> pyz(ym * zm, 0);
-    std::vector<mwSize> pxyz(xm * ym * zm, 0);
-    std::vector<mwSize> pzk(km * zm, 0);
-    std::vector<mwSize> pxzk(km * xm * zm, 0);
-    std::vector<mwSize> pyzk(km * ym * zm, 0);
-    std::vector<mwSize> pxyzk(km * xm * ym * zm, 0);
     const detail::EntropyLookup lookup = detail::build_entropy_lookup(nTrials);
 
     const mwSize yzStride = ym * zm;
-    const mwSize xzStride = xm * zm;
     const mwSize xyzStride = xm * ym * zm;
 
     for (mwSize i = 0; i < nTrials; ++i) {
@@ -464,33 +459,22 @@ inline void calc_cond_cmi(
         const mwSize zi = detail::label_index(z[i]);
         const mwSize ki = detail::label_index(k[i]);
         const mwSize yz = yi * zm + zi;
-        const mwSize xz = xi * zm + zi;
         const mwSize xyz = xi * yzStride + yz;
-        ++pz[zi];
-        ++pxz[xz];
-        ++pyz[yz];
-        ++pxyz[xyz];
-        ++pzk[ki * zm + zi];
-        ++pxzk[ki * xzStride + xz];
-        ++pyzk[ki * yzStride + yz];
         ++pxyzk[ki * xyzStride + xyz];
     }
 
-    *total = detail::entropy_from_counts(pxz.data(), pxz.size(), lookup)
-        + detail::entropy_from_counts(pyz.data(), pyz.size(), lookup)
-        - detail::entropy_from_counts(pxyz.data(), pxyz.size(), lookup)
-        - detail::entropy_from_counts(pz.data(), pz.size(), lookup);
-
+    double totalValue = 0.0;
     for (mwSize ki = 0; ki < km; ++ki) {
-        const mwSize pzOffset = ki * zm;
-        const mwSize xzOffset = ki * xzStride;
-        const mwSize yzOffset = ki * yzStride;
         const mwSize xyzOffset = ki * xyzStride;
-        contributions[ki] = detail::entropy_from_counts(pxzk.data() + xzOffset, xzStride, lookup)
-            + detail::entropy_from_counts(pyzk.data() + yzOffset, yzStride, lookup)
+        detail::derive_cmi_marginals_from_joint(
+            pxyzk.data() + xyzOffset, xm, ym, zm, pz.data(), pxz.data(), pyz.data());
+        contributions[ki] = detail::entropy_from_counts(pxz.data(), pxz.size(), lookup)
+            + detail::entropy_from_counts(pyz.data(), pyz.size(), lookup)
             - detail::entropy_from_counts(pxyzk.data() + xyzOffset, xyzStride, lookup)
-            - detail::entropy_from_counts(pzk.data() + pzOffset, zm, lookup);
+            - detail::entropy_from_counts(pz.data(), zm, lookup);
+        totalValue += contributions[ki];
     }
+    *total = totalValue;
 }
 
 template <typename TX, typename TY>

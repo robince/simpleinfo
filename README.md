@@ -20,12 +20,6 @@ Install from the repository root:
 uv pip install -e .
 ```
 
-Install with optional Numba acceleration:
-
-```bash
-uv pip install -e ".[opt]"
-```
-
 Run the Python tests from the repository root:
 
 ```bash
@@ -39,8 +33,8 @@ trial-first layout. If you need to adapt a trial-first matrix `x`, use
 `np.ascontiguousarray(x.T)` before calling `simpleinfo.fastinfo`.
 
 Python `fastinfo` accepts integer label arrays. Numba can specialize kernels to
-the input dtype automatically, but the current validated Python path may still
-normalize some inputs to `int64` internally. So integer arrays are the right
+the input dtype automatically, but some validated Python paths may still
+normalize inputs to `int64` internally. So integer arrays are the right
 user-facing input type, but the MATLAB fast path is currently the stricter
 zero-copy implementation.
 

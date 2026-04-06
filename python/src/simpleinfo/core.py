@@ -19,6 +19,8 @@ def entropy(p):
 def numbase2dec(x, b):
     """Convert base-b words arranged as [M, N] into decimal integers."""
     b = _validate_bin_count(b, "b")
+    if b < 2:
+        raise ValueError("b must be an integer greater than or equal to 2.")
     digits = np.asarray(x)
     if digits.size == 0:
         raise ValueError("x must contain at least one digit.")
@@ -39,6 +41,8 @@ def numbase2dec(x, b):
 def numdec2base(d, b, m=None):
     """Convert decimal integers into base-b words arranged as [M, N]."""
     b = _validate_bin_count(b, "b")
+    if b < 2:
+        raise ValueError("b must be an integer greater than or equal to 2.")
     values = np.asarray(d)
     if values.size == 0:
         raise ValueError("d must contain at least one integer.")
@@ -70,6 +74,8 @@ def _required_base_digits(max_value, base):
     max_value = int(max_value)
     if max_value < 0:
         raise ValueError("max_value must be non-negative.")
+    if int(base) < 2:
+        raise ValueError("base must be an integer greater than or equal to 2.")
     digits = 1
     while max_value >= base:
         max_value //= base

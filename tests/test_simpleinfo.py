@@ -11,13 +11,12 @@ if str(PYTHON_SRC) not in sys.path:
 
 import simpleinfo
 
+from simpleinfo.fastinfo import _api as fastinfo_api
+from simpleinfo.fastinfo import _fallback as fastinfo_fallback
+
 try:
-    from simpleinfo.fastinfo import _api as fastinfo_api
-    from simpleinfo.fastinfo import _fallback as fastinfo_fallback
     from simpleinfo.fastinfo import _numba as fastinfo_numba
 except Exception:  # pragma: no cover - optional backend import
-    fastinfo_api = None
-    fastinfo_fallback = None
     fastinfo_numba = None
 
 
@@ -177,6 +176,12 @@ class SimpleInfoTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "m is too small"):
             simpleinfo.numdec2base(np.array([8]), 2, m=3)
 
+    def test_base_conversion_rejects_base_one(self):
+        with self.assertRaisesRegex(ValueError, "greater than or equal to 2"):
+            simpleinfo.numbase2dec(np.array([0, 0]), 1)
+        with self.assertRaisesRegex(ValueError, "greater than or equal to 2"):
+            simpleinfo.numdec2base(np.array([0, 1]), 1)
+
     def test_fastinfo_calcinfo_matches_reference_unbiased(self):
         x = np.array([0, 0, 1, 1])
         y = np.array([0, 0, 1, 1])
@@ -299,6 +304,14 @@ class SimpleInfoTests(unittest.TestCase):
         a = simpleinfo.fastinfo.calcinfoperm_slice(x, 2, y, 2, 8, seed=123)
         b = simpleinfo.fastinfo.calcinfoperm_slice(x, 2, y, 2, 8, seed=123)
         np.testing.assert_allclose(a, b)
+
+    def test_fastinfo_fallback_calcinfoperm_slice_seedless_shape_matches_seeded(self):
+        x = np.array([[0, 0, 1, 1], [0, 1, 0, 1]])
+        y = np.array([0, 0, 1, 1])
+        fallback_out = fastinfo_fallback.calcinfoperm_slice(x, 2, y, 2, 5, seed=None)
+        seeded_out = fastinfo_fallback.calcinfoperm_slice(x, 2, y, 2, 5, seed=123)
+        self.assertEqual(fallback_out.shape, seeded_out.shape)
+        self.assertEqual(fallback_out.shape, (5, 2))
 
     def test_fastinfo_slice_apis_require_c_contiguous_trial_last_matrices(self):
         x = np.asfortranarray(np.array([[0, 0, 1, 1], [0, 1, 0, 1]]))

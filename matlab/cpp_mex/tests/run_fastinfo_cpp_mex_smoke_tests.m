@@ -124,10 +124,12 @@ function test_calcinfoperm()
 x = int16(repmat([0; 1], 128, 1));
 y = int16(repmat([0; 1], 128, 1));
 actual = fastinfo_calcinfoperm_cpp(x, 2, y, 2, 64, 2, 123);
+reference = permutation_reference_scalar(x, 2, y, 2, 64, 123);
 assert(isvector(actual) && numel(actual) == 64);
 assert(all(isfinite(actual)));
 assert(all(actual >= -1e-12));
 assert(mean(actual) < 0.02);
+assert_reference_distribution_close(actual, reference);
 end
 
 function test_calcinfoperm_slice()
@@ -135,9 +137,41 @@ x = int16([0 0 1; 0 1 1; 1 0 0; 1 1 0]);
 y = int16([0; 1; 0; 1]);
 a = fastinfo_calcinfoperm_slice_cpp(x, 2, y, 2, 8, 2, 123);
 b = fastinfo_calcinfoperm_slice_cpp(x, 2, y, 2, 8, 2, 123);
+reference = permutation_reference_slice(x, 2, y, 2, 8, 123);
 assert(isequal(size(a), [8 3]));
 assert(all(isfinite(a), 'all'));
 assert(max(abs(a(:) - b(:))) < 1e-12);
+for col = 1:size(a, 2)
+    assert_reference_distribution_close(a(:, col), reference(:, col));
+end
+end
+
+function reference = permutation_reference_scalar(x, xb, y, yb, nperm, seed)
+s = rng;
+cleanup = onCleanup(@() rng(s));
+rng(double(seed), 'twister');
+reference = calcinfoperm(x, xb, y, yb, nperm, false, 0);
+clear cleanup
+end
+
+function reference = permutation_reference_slice(x, xb, y, yb, nperm, seed)
+s = rng;
+cleanup = onCleanup(@() rng(s));
+rng(double(seed), 'twister');
+reference = calcinfoperm_slice(x, xb, y, yb, nperm, false, 0);
+clear cleanup
+end
+
+function assert_reference_distribution_close(actual, expected)
+assert(isequal(size(actual), size(expected)));
+assert(all(isfinite(actual(:))));
+assert(all(isfinite(expected(:))));
+meanTol = 0.03;
+stdTol = 0.04;
+assert(abs(mean(actual(:)) - mean(expected(:))) < meanTol, ...
+    'Permutation mean mismatch: actual=%g expected=%g', mean(actual(:)), mean(expected(:)));
+assert(abs(std(actual(:), 1) - std(expected(:), 1)) < stdTol, ...
+    'Permutation std mismatch: actual=%g expected=%g', std(actual(:), 1), std(expected(:), 1));
 end
 
 function assert_error_contains(fun, messageFragment)

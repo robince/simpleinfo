@@ -14,11 +14,6 @@ dependencies = [
     "scipy",
 ]
 
-[project.optional-dependencies]
-opt = [
-    "numba>=0.60",
-]
-
 [tool.hatch.build.targets.wheel]
 packages = ["python/src/simpleinfo"]
 

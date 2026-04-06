@@ -150,6 +150,7 @@ MATLAB fast path:
 Python fast path:
 
 - integer arrays are the intended public input type
+- Numba is part of the standard Python runtime dependency set
 - Numba can specialize kernels by dtype automatically
 - some validated Python paths may still normalize inputs to `int64`
   internally, so dtype specialization is currently less strict than the MATLAB
@@ -277,19 +278,18 @@ python/src/simpleinfo/
     _fallback.py
 ```
 
-Python `fastinfo` is now a NumPy-first implementation with optional Numba
-acceleration.
+Python `fastinfo` is now a Numba-backed implementation with a NumPy fallback.
 
 ## Python Runtime Plan
 
 The Python optimized layer should follow the same public API shape as MATLAB,
-but should not introduce compiled-extension complexity in the first phase.
+but should not introduce Python C++ extension complexity in the first phase.
 
 Recommended staged approach:
 
 1. keep `simpleinfo.fastinfo` API-matched with MATLAB
-2. use NumPy as the baseline implementation
-3. use optional Numba acceleration for the hot counting and permutation paths
+2. keep a NumPy fallback implementation for testing and portability
+3. use Numba for the hot counting and permutation paths
 4. defer any Python C++ extension or shared native-core binding until there is a
    demonstrated need for it
 
@@ -297,9 +297,9 @@ Rationale:
 
 - MATLAB already carries the first native build complexity through MEX and
   OpenMP
-- NumPy first keeps the Python side easy to install and easy to test
-- optional Numba can provide most of the practical speedup without committing to
-  pybind11 or a second compiled toolchain immediately
+- keeping a NumPy fallback still keeps the Python side easy to test
+- Numba provides most of the practical speedup without committing to pybind11
+  or a second compiled toolchain immediately
 
 ## Build And Release Direction
 

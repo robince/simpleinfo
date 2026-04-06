@@ -346,8 +346,7 @@ def calcinfoperm_slice(x, xb, y, yb, nperm, *, bias=False, validate=True, thread
     if x.shape[1] != y.size:
         raise ValueError("x must have shape [Nx, Ntrl] and y must have length Ntrl.")
     if seed is None:
-        out = calcinfoperm_slice_reference(x.T, xb, y, yb, nperm, bias=bias, beta=0.0).T
-        return out
+        return calcinfoperm_slice_reference(x.T, xb, y, yb, nperm, bias=bias, beta=0.0)
 
     out = np.zeros((nperm, x.shape[0]), dtype=float)
     for col in range(x.shape[0]):

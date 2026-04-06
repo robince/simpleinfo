@@ -1,6 +1,5 @@
 #include "fastinfo_mex_adapter_utils.hpp"
 
-#include "fastinfo_kernels.hpp"
 #include "fastinfo_typed_kernels.hpp"
 
 class MexFunction : public fastinfo::MexAdapterBase {
