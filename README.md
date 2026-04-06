@@ -6,7 +6,7 @@ information-theoretic quantities in both Python and MATLAB.
 The repository now contains two layers:
 
 - top-level tutorial/reference functions such as `calcinfo`, `calccmi`,
-  `eqpopbin`, `rebin`, `numbase2dec`, and `numdec2base`
+  `calcinfoperm`, `eqpopbin`, `rebin`, `numbase2dec`, and `numdec2base`
 - an optimized `fastinfo` namespace in MATLAB and Python
 
 The MATLAB optimized runtime is backed by C++ MEX with OpenMP and follows the
@@ -32,11 +32,48 @@ top-level tutorial/reference batch functions, which keep the MATLAB-style
 trial-first layout. If you need to adapt a trial-first matrix `x`, use
 `np.ascontiguousarray(x.T)` before calling `simpleinfo.fastinfo`.
 
+The public optimized Python API includes:
+
+- `simpleinfo.fastinfo.calcinfo`
+- `simpleinfo.fastinfo.calccmi`
+- `simpleinfo.fastinfo.calcinfoperm`
+- `simpleinfo.fastinfo.calcinfo_slice`
+- `simpleinfo.fastinfo.calcinfomatched`
+- `simpleinfo.fastinfo.calccondcmi`
+- `simpleinfo.fastinfo.calccmi_slice`
+- `simpleinfo.fastinfo.calcinfoperm_slice`
+- `simpleinfo.fastinfo.eqpop`
+- `simpleinfo.fastinfo.eqpop_sorted`
+- `simpleinfo.fastinfo.eqpop_slice`
+- `simpleinfo.fastinfo.eqpop_sorted_slice`
+- `simpleinfo.fastinfo.calcpairwiseinfo`
+- `simpleinfo.fastinfo.calcpairwiseinfo_slice`
+- `simpleinfo.fastinfo.set_threads`
+
 Python `fastinfo` accepts integer label arrays. Numba can specialize kernels to
 the input dtype automatically, but some validated Python paths may still
 normalize inputs to `int64` internally. So integer arrays are the right
 user-facing input type, but the MATLAB fast path is currently the stricter
 zero-copy implementation.
+
+Typical Python usage:
+
+```python
+import numpy as np
+import simpleinfo
+
+xbin = simpleinfo.fastinfo.eqpop(x_continuous, 8)
+I = simpleinfo.fastinfo.calcinfo(xbin, 8, y, yb)
+
+X_fast = np.ascontiguousarray(X_trial_first.T)
+simpleinfo.fastinfo.set_threads(4)
+I_pages = simpleinfo.fastinfo.calcinfo_slice(X_fast, 8, y, yb)
+Iperm = simpleinfo.fastinfo.calcinfoperm_slice(X_fast, 8, y, yb, 256, seed=123)
+```
+
+If you upgrade the package in place after changes to the cached Numba kernels
+and hit unexpected import or compilation errors, clear Python cache artifacts
+such as `__pycache__` before retrying.
 
 ## MATLAB
 
@@ -85,6 +122,16 @@ I = fastinfo.calcinfo(xbin, nb, y, yb);
 
 Since `eqpop` returns integer labels directly, that path stays on the fast
 typed route without an extra conversion step.
+
+Typical MATLAB usage:
+
+```matlab
+xbin = fastinfo.eqpop(x, 8);
+I = fastinfo.calcinfo(xbin, 8, y, yb);
+
+Ipages = fastinfo.calcinfo_slice(X, 8, y, yb, Threads=4);
+Iperm = fastinfo.calcinfoperm_slice(X, 8, y, yb, 256, Threads=4, Seed=123);
+```
 
 ## Benchmarks
 
