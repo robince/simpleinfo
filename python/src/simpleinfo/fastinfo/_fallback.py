@@ -350,8 +350,8 @@ def calcinfoperm_slice(x, xb, y, yb, nperm, *, bias=False, validate=True, thread
 
     out = np.zeros((nperm, x.shape[0]), dtype=float)
     for col in range(x.shape[0]):
+        seed_col = _splitmix64_py(_splitmix64_py(int(seed)) + col)
         for perm in range(nperm):
-            seed_col = _splitmix64_py(_splitmix64_py(int(seed)) + col)
             xsh = _fisher_yates_shuffle_seeded(x[col], _splitmix64_py(seed_col + perm))
             out[perm, col] = calcinfo(xsh, xb, y, yb, bias=False, validate=False)
     if bias:
