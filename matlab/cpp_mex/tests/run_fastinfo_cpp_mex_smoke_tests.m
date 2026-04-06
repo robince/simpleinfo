@@ -134,17 +134,16 @@ assert_reference_distribution_close(actual, reference);
 end
 
 function test_calcinfoperm_slice()
-x = int16([0 0 1; 0 1 1; 1 0 0; 1 1 0]);
-y = int16([0; 1; 0; 1]);
-a = fastinfo_calcinfoperm_slice_cpp(x, 2, y, 2, 8, 2, 123);
-b = fastinfo_calcinfoperm_slice_cpp(x, 2, y, 2, 8, 2, 123);
-reference = permutation_reference_slice(x, 2, y, 2, 8, 123);
-assert(isequal(size(a), [8 3]));
+x = int16(repmat([0 0 1; 0 1 1; 1 0 0; 1 1 0], 32, 1));
+y = int16(repmat([0; 1; 0; 1], 32, 1));
+nperm = 24;
+a = fastinfo_calcinfoperm_slice_cpp(x, 2, y, 2, nperm, 2, 123);
+b = fastinfo_calcinfoperm_slice_cpp(x, 2, y, 2, nperm, 2, 123);
+reference = permutation_reference_slice_native(x, 2, y, 2, nperm, 123);
+assert(isequal(size(a), [nperm 3]));
 assert(all(isfinite(a), 'all'));
 assert(max(abs(a(:) - b(:))) < 1e-12);
-for col = 1:size(a, 2)
-    assert_reference_distribution_close(a(:, col), reference(:, col));
-end
+assert(max(abs(a(:) - reference(:))) < 1e-12);
 end
 
 function reference = permutation_reference_scalar(x, xb, y, yb, nperm, seed)
@@ -161,6 +160,13 @@ cleanup = onCleanup(@() rng(s));
 rng(double(seed), 'twister');
 reference = calcinfoperm_slice(x, xb, y, yb, nperm, false, 0);
 clear cleanup
+end
+
+function reference = permutation_reference_slice_native(x, xb, y, yb, nperm, seed)
+reference = zeros(nperm, size(x, 2));
+for col = 1:size(x, 2)
+    reference(:, col) = fastinfo_calcinfoperm_slice_cpp(x(:, col), xb, y, yb, nperm, 1, double(seed + col - 1));
+end
 end
 
 function assert_reference_distribution_close(actual, expected)

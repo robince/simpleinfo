@@ -88,6 +88,24 @@ such as `__pycache__` before retrying.
 
 ## MATLAB
 
+From the repository root inside MATLAB, add the package to your path with:
+
+```matlab
+setup_simpleinfo
+```
+
+That adds `matlab/` to the MATLAB path, which exposes both the tutorial
+functions and the `fastinfo.*` namespace. The `fastinfo` wrappers add the
+compiled MEX output directory automatically when needed, so users do not need
+to add `matlab/cpp_mex/bin/...` by hand.
+
+If you prefer to manage the path manually, the essential step is:
+
+```matlab
+repoRoot = pwd;
+addpath(fullfile(repoRoot, "matlab"))
+```
+
 Build the native runtime from the repository root inside MATLAB:
 
 ```matlab
@@ -140,6 +158,8 @@ typed route without an extra conversion step.
 Typical MATLAB usage:
 
 ```matlab
+setup_simpleinfo
+
 xbin = fastinfo.eqpop(x, 8);
 I = fastinfo.calcinfo(xbin, 8, y, yb);
 

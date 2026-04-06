@@ -18,6 +18,13 @@ OpenMP is enabled by default for the slice and permutation kernels.
 
 ## Build
 
+Before building or using the wrappers from a fresh MATLAB session, add the
+repository MATLAB path from the repo root:
+
+```matlab
+setup_simpleinfo
+```
+
 From the repository root inside MATLAB:
 
 ```matlab
