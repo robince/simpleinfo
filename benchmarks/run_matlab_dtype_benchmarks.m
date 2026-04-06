@@ -3,6 +3,7 @@ p = inputParser;
 p.addParameter('Compile', false, @(x) islogical(x) && isscalar(x));
 p.addParameter('ThreadCounts', [1 2 4], @(x) isnumeric(x) && isvector(x) && ~isempty(x));
 p.addParameter('Mode', 'quick', @(x) (ischar(x) || isstring(x)) && ismember(lower(string(x)), ["quick" "full"]));
+p.addParameter('Regimes', {}, @(x) iscellstr(x) || isstring(x));
 p.addParameter('Repeats', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 1));
 p.addParameter('Warmup', 1, @(x) isnumeric(x) && isscalar(x) && x >= 0);
 p.addParameter('TargetSecondsPerDType', 10, @(x) isnumeric(x) && isscalar(x) && x > 0);
@@ -13,6 +14,7 @@ p.addParameter('OutputFile', '', @(x) ischar(x) || isstring(x));
 p.parse(varargin{:});
 opts = p.Results;
 mode = lower(string(opts.Mode));
+regimeNames = resolve_regimes(mode, opts.Regimes);
 
 repoRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(fullfile(repoRoot, 'matlab'));
@@ -25,6 +27,9 @@ if opts.Verbose
         fprintf('run_matlab_dtype_benchmarks: using existing MEX runtime in %s\n', runtime.output_dir);
     else
         fprintf('run_matlab_dtype_benchmarks: missing runtime artifacts, will compile.\n');
+        for i = 1:numel(runtime.missing)
+            fprintf('  missing: %s\n', runtime.missing{i});
+        end
     end
 end
 if opts.Compile || ~runtime.available
@@ -42,23 +47,21 @@ else
     repeats = double(opts.Repeats);
 end
 
-inputs = dtype_inputs(mode);
-inputs.config_target_seconds = double(opts.TargetSecondsPerDType);
-inputs.config_max_repeats = double(opts.MaxRepeats);
-cases = benchmark_cases(inputs, dtypeNames, threadCounts, repeats, opts.Warmup);
+[cases, configs] = benchmark_cases(regimeNames, dtypeNames, threadCounts, repeats, opts.Warmup, double(opts.TargetSecondsPerDType), double(opts.MaxRepeats));
 
 results = struct();
 results.generated_at = char(datetime('now', TimeZone='local', Format='yyyy-MM-dd''T''HH:mm:ssXXX'));
 results.backend = 'mex_cpp';
 results.available = true;
 results.mode = char(mode);
+results.regimes = cellstr(regimeNames);
 results.thread_counts = threadCounts;
 results.repeats = repeats;
 results.warmup = opts.Warmup;
 results.target_seconds_per_dtype = opts.TargetSecondsPerDType;
 results.max_repeats = opts.MaxRepeats;
 results.dtypes = dtypeNames;
-results.config = inputs.config;
+results.configs = configs;
 results.cases = cases;
 
 outputFile = char(opts.OutputFile);
@@ -106,14 +109,28 @@ for i = 1:numel(required)
 end
 end
 
-function inputs = dtype_inputs(mode)
-cfg = dtype_mode_config(mode);
+function regimeNames = resolve_regimes(mode, regimes)
+if ~isempty(regimes)
+    regimeNames = lower(string(regimes(:)'));
+    return
+end
+if mode == "quick"
+    regimeNames = "medium";
+elseif mode == "full"
+    regimeNames = "large";
+else
+    error('run_matlab_dtype_benchmarks:Mode', 'Unsupported mode "%s".', mode);
+end
+end
+
+function inputs = dtype_inputs(regimeName)
+cfg = dtype_regime_config(regimeName);
 xb = 16;
 yb = 8;
 zb = 4;
-shared = discrete_vector(cfg.scaling_ntrl, yb, 9001);
-z = discrete_vector(cfg.scaling_ntrl, zb, 9002);
-y = mod(shared + z + discrete_vector(cfg.scaling_ntrl, 2, 9003), yb);
+shared = discrete_vector(cfg.ntrl, yb, 9001);
+z = discrete_vector(cfg.ntrl, zb, 9002);
+y = mod(shared + z + discrete_vector(cfg.ntrl, 2, 9003), yb);
 inputs = struct();
 inputs.config = cfg;
 inputs.xb = xb;
@@ -121,34 +138,41 @@ inputs.yb = yb;
 inputs.zb = zb;
 inputs.seed = 5489;
 inputs.x_slice = mod( ...
-    shared + 2 * z + yb * discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nx, 2, 9004) + discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nx, 2, 9005), xb);
+    shared + 2 * z + yb * discrete_matrix(cfg.ntrl, cfg.nx, 2, 9004) + discrete_matrix(cfg.ntrl, cfg.nx, 2, 9005), xb);
 inputs.y = y;
 inputs.z = z;
 inputs.x_matched = mod( ...
-    discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nmatched, yb, 9010) + ...
-    yb * discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nmatched, 2, 9011) + ...
-    discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nmatched, 2, 9012), xb);
+    discrete_matrix(cfg.ntrl, cfg.nmatched, yb, 9010) + ...
+    yb * discrete_matrix(cfg.ntrl, cfg.nmatched, 2, 9011) + ...
+    discrete_matrix(cfg.ntrl, cfg.nmatched, 2, 9012), xb);
 inputs.y_matched = mod( ...
-    discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nmatched, yb, 9010) + ...
-    discrete_matrix(cfg.scaling_ntrl, cfg.scaling_nmatched, 2, 9013), yb);
-inputs.nperm = cfg.scaling_nperm;
+    discrete_matrix(cfg.ntrl, cfg.nmatched, yb, 9010) + ...
+    discrete_matrix(cfg.ntrl, cfg.nmatched, 2, 9013), yb);
+inputs.nperm = cfg.nperm;
 end
 
-function cfg = dtype_mode_config(mode)
-if mode == "quick"
+function cfg = dtype_regime_config(regimeName)
+regimeName = lower(string(regimeName));
+if regimeName == "small"
     cfg = struct( ...
-        'scaling_ntrl', 1024, ...
-        'scaling_nx', 512, ...
-        'scaling_nmatched', 512, ...
-        'scaling_nperm', 128);
-elseif mode == "full"
+        'ntrl', 256, ...
+        'nx', 128, ...
+        'nmatched', 128, ...
+        'nperm', 64);
+elseif regimeName == "medium"
     cfg = struct( ...
-        'scaling_ntrl', 2048, ...
-        'scaling_nx', 2048, ...
-        'scaling_nmatched', 1024, ...
-        'scaling_nperm', 256);
+        'ntrl', 1024, ...
+        'nx', 512, ...
+        'nmatched', 512, ...
+        'nperm', 128);
+elseif regimeName == "large"
+    cfg = struct( ...
+        'ntrl', 4096, ...
+        'nx', 2048, ...
+        'nmatched', 1024, ...
+        'nperm', 256);
 else
-    error('run_matlab_dtype_benchmarks:Mode', 'Unsupported mode "%s".', mode);
+    error('run_matlab_dtype_benchmarks:Regime', 'Unsupported regime "%s".', regimeName);
 end
 end
 
@@ -178,60 +202,72 @@ function out = cast_discrete(values, dtypeName)
 out = cast(values, dtypeName);
 end
 
-function cases = benchmark_cases(inputs, dtypeNames, threadCounts, repeats, warmup)
+function [cases, configs] = benchmark_cases(regimeNames, dtypeNames, threadCounts, repeats, warmup, targetSecondsPerDType, maxRepeats)
 maxThreads = max(threadCounts);
 fastinfo.calcinfo_slice(int16(randi([0, 1], 32, 16)), 2, int16(randi([0, 1], 32, 1)), 2, 'Threads', maxThreads);
-cases = struct('dtype', {}, 'operation', {}, 'kind', {}, 'threads', {}, 'repeats', {}, 'seconds', {}, 'speedup_vs_1', {}, 'max_abs_diff_vs_1', {});
-for d = 1:numel(dtypeNames)
-    dtypeName = dtypeNames{d};
-    xScalar = cast_discrete(inputs.x_slice(:, 1), dtypeName);
-    y = cast_discrete(inputs.y, dtypeName);
-    z = cast_discrete(inputs.z, dtypeName);
-    xSlice = cast_discrete(inputs.x_slice, dtypeName);
-    xMatched = cast_discrete(inputs.x_matched, dtypeName);
-    yMatched = cast_discrete(inputs.y_matched, dtypeName);
-    specs = { ...
-        struct('operation', 'calcinfo', 'kind', 'scalar', 'fn', @(~) fastinfo.calcinfo(xScalar, inputs.xb, y, inputs.yb)), ...
-        struct('operation', 'calcinfo_slice', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfo_slice(xSlice, inputs.xb, y, inputs.yb, 'Threads', nThreads)), ...
-        struct('operation', 'calcinfomatched', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfomatched(xMatched, inputs.xb, yMatched, inputs.yb, 'Threads', nThreads)), ...
-        struct('operation', 'calccmi', 'kind', 'scalar', 'fn', @(~) fastinfo.calccmi(xScalar, inputs.xb, y, inputs.yb, z, inputs.zb)), ...
-        struct('operation', 'calccmi_slice', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calccmi_slice(xSlice, inputs.xb, y, inputs.yb, z, inputs.zb, 'Threads', nThreads)), ...
-        struct('operation', 'calcinfoperm', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfoperm(xScalar, inputs.xb, y, inputs.yb, inputs.nperm, 'Threads', nThreads, 'Seed', inputs.seed)), ...
-        struct('operation', 'calcinfoperm_slice', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfoperm_slice(xSlice, inputs.xb, y, inputs.yb, inputs.nperm, 'Threads', nThreads, 'Seed', inputs.seed)) ...
-        };
-    for s = 1:numel(specs)
-        spec = specs{s};
-        measurementsPerDType = numel(threadCounts) * 5 + 2;
-        targetSecondsPerMeasurement = inputs.config_target_seconds / measurementsPerDType;
-        if strcmp(spec.kind, 'threaded')
-            useThreads = threadCounts;
-        else
-            useThreads = threadCounts(1);
-        end
-        baseline = [];
-        baselineTime = [];
-        for t = 1:numel(useThreads)
-            nThreads = useThreads(t);
-            current = spec.fn(nThreads);
-            if isempty(repeats)
-                repeatsUsed = calibrated_repeats(@() spec.fn(nThreads), warmup, targetSecondsPerMeasurement, inputs.config_max_repeats);
+cases = struct('regime', {}, 'dtype', {}, 'operation', {}, 'kind', {}, 'threads', {}, 'repeats', {}, 'seconds', {}, 'speedup_vs_1', {}, 'max_abs_diff_vs_1', {});
+configs = struct('regime', {}, 'ntrl', {}, 'nx', {}, 'nmatched', {}, 'nperm', {});
+for r = 1:numel(regimeNames)
+    regimeName = char(regimeNames(r));
+    inputs = dtype_inputs(regimeName);
+    configs(end + 1) = struct( ... %#ok<AGROW>
+        'regime', regimeName, ...
+        'ntrl', inputs.config.ntrl, ...
+        'nx', inputs.config.nx, ...
+        'nmatched', inputs.config.nmatched, ...
+        'nperm', inputs.config.nperm);
+    for d = 1:numel(dtypeNames)
+        dtypeName = dtypeNames{d};
+        xScalar = cast_discrete(inputs.x_slice(:, 1), dtypeName);
+        y = cast_discrete(inputs.y, dtypeName);
+        z = cast_discrete(inputs.z, dtypeName);
+        xSlice = cast_discrete(inputs.x_slice, dtypeName);
+        xMatched = cast_discrete(inputs.x_matched, dtypeName);
+        yMatched = cast_discrete(inputs.y_matched, dtypeName);
+        specs = { ...
+            struct('operation', 'calcinfo', 'kind', 'scalar', 'fn', @(~) fastinfo.calcinfo(xScalar, inputs.xb, y, inputs.yb)), ...
+            struct('operation', 'calcinfo_slice', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfo_slice(xSlice, inputs.xb, y, inputs.yb, 'Threads', nThreads)), ...
+            struct('operation', 'calcinfomatched', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfomatched(xMatched, inputs.xb, yMatched, inputs.yb, 'Threads', nThreads)), ...
+            struct('operation', 'calccmi', 'kind', 'scalar', 'fn', @(~) fastinfo.calccmi(xScalar, inputs.xb, y, inputs.yb, z, inputs.zb)), ...
+            struct('operation', 'calccmi_slice', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calccmi_slice(xSlice, inputs.xb, y, inputs.yb, z, inputs.zb, 'Threads', nThreads)), ...
+            struct('operation', 'calcinfoperm', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfoperm(xScalar, inputs.xb, y, inputs.yb, inputs.nperm, 'Threads', nThreads, 'Seed', inputs.seed)), ...
+            struct('operation', 'calcinfoperm_slice', 'kind', 'threaded', 'fn', @(nThreads) fastinfo.calcinfoperm_slice(xSlice, inputs.xb, y, inputs.yb, inputs.nperm, 'Threads', nThreads, 'Seed', inputs.seed)) ...
+            };
+        for s = 1:numel(specs)
+            spec = specs{s};
+            measurementsPerDType = numel(threadCounts) * 5 + 2;
+            targetSecondsPerMeasurement = targetSecondsPerDType / measurementsPerDType;
+            if strcmp(spec.kind, 'threaded')
+                useThreads = threadCounts;
             else
-                repeatsUsed = repeats;
+                useThreads = threadCounts(1);
             end
-            currentTime = median_runtime(@() spec.fn(nThreads), repeatsUsed, warmup);
-            if isempty(baseline)
-                baseline = current;
-                baselineTime = currentTime;
+            baseline = [];
+            baselineTime = [];
+            for t = 1:numel(useThreads)
+                nThreads = useThreads(t);
+                current = spec.fn(nThreads);
+                if isempty(repeats)
+                    repeatsUsed = calibrated_repeats(@() spec.fn(nThreads), warmup, targetSecondsPerMeasurement, maxRepeats);
+                else
+                    repeatsUsed = repeats;
+                end
+                currentTime = median_runtime(@() spec.fn(nThreads), repeatsUsed, warmup);
+                if isempty(baseline)
+                    baseline = current;
+                    baselineTime = currentTime;
+                end
+                cases(end + 1) = struct( ... %#ok<AGROW>
+                    'regime', regimeName, ...
+                    'dtype', dtypeName, ...
+                    'operation', spec.operation, ...
+                    'kind', spec.kind, ...
+                    'threads', nThreads, ...
+                    'repeats', repeatsUsed, ...
+                    'seconds', currentTime, ...
+                    'speedup_vs_1', baselineTime / currentTime, ...
+                    'max_abs_diff_vs_1', max_abs_diff(current, baseline));
             end
-            cases(end + 1) = struct( ... %#ok<AGROW>
-                'dtype', dtypeName, ...
-                'operation', spec.operation, ...
-                'kind', spec.kind, ...
-                'threads', nThreads, ...
-                'repeats', repeatsUsed, ...
-                'seconds', currentTime, ...
-                'speedup_vs_1', baselineTime / currentTime, ...
-                'max_abs_diff_vs_1', max_abs_diff(current, baseline));
         end
     end
 end

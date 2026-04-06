@@ -31,6 +31,7 @@ Python:
 ```bash
 ./.venv/bin/python benchmarks/run_python_benchmarks.py --mode quick
 ./.venv/bin/python benchmarks/run_python_dtype_benchmarks.py --mode quick --thread-counts 1 2 4
+./.venv/bin/python benchmarks/run_python_dtype_benchmarks.py --regimes small medium large --thread-counts 1 2 4
 ```
 
 Benchmark artifacts are written under:
@@ -50,6 +51,7 @@ MATLAB:
 addpath(fullfile(pwd, 'benchmarks'));
 results = run_matlab_comparative_benchmarks('Mode', 'quick', 'ThreadCounts', [1 2 4]);
 dtypeResults = run_matlab_dtype_benchmarks('Mode', 'quick', 'ThreadCounts', [1 2 4]);
+dtypeSweep = run_matlab_dtype_benchmarks('Regimes', {'small', 'medium', 'large'}, 'ThreadCounts', [1 2 4]);
 ```
 
 The dtype harnesses focus specifically on the discrete fast kernels and compare:

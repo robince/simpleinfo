@@ -19,6 +19,12 @@ namespace {
 
 constexpr double kLn2 = 0.693147180559945309417232121458176568;
 
+struct EntropyLookup {
+    double log2_n = 0.0;
+    double inv_n = 0.0;
+    std::vector<double> count_log2;
+};
+
 mwSize clamp_threads(mwSize requested) {
 #ifdef _OPENMP
     if (requested == 0) {
@@ -31,22 +37,34 @@ mwSize clamp_threads(mwSize requested) {
 #endif
 }
 
-double entropy_from_counts(const mwSize* counts, mwSize nCounts, mwSize nTrials) {
+EntropyLookup build_entropy_lookup(mwSize nTrials) {
+    EntropyLookup lookup;
     if (nTrials == 0) {
+        return lookup;
+    }
+    lookup.log2_n = std::log(static_cast<double>(nTrials)) / kLn2;
+    lookup.inv_n = 1.0 / static_cast<double>(nTrials);
+    lookup.count_log2.assign(nTrials + 1, 0.0);
+    for (mwSize count = 2; count <= nTrials; ++count) {
+        lookup.count_log2[count] = static_cast<double>(count) * std::log(static_cast<double>(count)) / kLn2;
+    }
+    return lookup;
+}
+
+double entropy_from_counts(const mwSize* counts, mwSize nCounts, const EntropyLookup& lookup) {
+    if (lookup.count_log2.empty()) {
         return 0.0;
     }
     double sum = 0.0;
     for (mwSize i = 0; i < nCounts; ++i) {
         const mwSize count = counts[i];
-        if (count > 0) {
-            sum += static_cast<double>(count) * std::log(static_cast<double>(count));
-        }
+        sum += lookup.count_log2[count];
     }
-    return (std::log(static_cast<double>(nTrials)) - sum / static_cast<double>(nTrials)) / kLn2;
+    return lookup.log2_n - sum * lookup.inv_n;
 }
 
-double entropy_from_counts(const std::vector<mwSize>& counts, mwSize nTrials) {
-    return entropy_from_counts(counts.data(), counts.size(), nTrials);
+double entropy_from_counts(const std::vector<mwSize>& counts, const EntropyLookup& lookup) {
+    return entropy_from_counts(counts.data(), counts.size(), lookup);
 }
 
 std::uint64_t splitmix64(std::uint64_t x) {
@@ -80,7 +98,7 @@ double calc_info_buffered(
     mwSize xm,
     const mwSize* y,
     mwSize ym,
-    mwSize nTrials,
+    const EntropyLookup& lookup,
     mwSize* px,
     mwSize* py,
     mwSize* pxy) {
@@ -88,6 +106,7 @@ double calc_info_buffered(
     std::fill(py, py + ym, 0);
     std::fill(pxy, pxy + xm * ym, 0);
 
+    const mwSize nTrials = static_cast<mwSize>(lookup.count_log2.size() - 1);
     for (mwSize i = 0; i < nTrials; ++i) {
         const mwSize xi = x[i];
         const mwSize yi = y[i];
@@ -96,9 +115,9 @@ double calc_info_buffered(
         ++pxy[xi * ym + yi];
     }
 
-    return entropy_from_counts(px, xm, nTrials)
-        + entropy_from_counts(py, ym, nTrials)
-        - entropy_from_counts(pxy, xm * ym, nTrials);
+    return entropy_from_counts(px, xm, lookup)
+        + entropy_from_counts(py, ym, lookup)
+        - entropy_from_counts(pxy, xm * ym, lookup);
 }
 
 double calc_info_with_precomputed_hy(
@@ -106,19 +125,20 @@ double calc_info_with_precomputed_hy(
     mwSize xm,
     const mwSize* y,
     mwSize ym,
-    mwSize nTrials,
+    const EntropyLookup& lookup,
     double hy,
     mwSize* px,
     mwSize* pxy) {
     std::fill(px, px + xm, 0);
     std::fill(pxy, pxy + xm * ym, 0);
+    const mwSize nTrials = static_cast<mwSize>(lookup.count_log2.size() - 1);
     for (mwSize i = 0; i < nTrials; ++i) {
         const mwSize xi = x[i];
         const mwSize yi = y[i];
         ++px[xi];
         ++pxy[xi * ym + yi];
     }
-    return entropy_from_counts(px, xm, nTrials) + hy - entropy_from_counts(pxy, xm * ym, nTrials);
+    return entropy_from_counts(px, xm, lookup) + hy - entropy_from_counts(pxy, xm * ym, lookup);
 }
 
 double calc_cmi_buffered(
@@ -128,7 +148,7 @@ double calc_cmi_buffered(
     mwSize ym,
     const mwSize* z,
     mwSize zm,
-    mwSize nTrials,
+    const EntropyLookup& lookup,
     mwSize* pz,
     mwSize* pxz,
     mwSize* pyz,
@@ -138,6 +158,7 @@ double calc_cmi_buffered(
     std::fill(pyz, pyz + ym * zm, 0);
     std::fill(pxyz, pxyz + xm * ym * zm, 0);
 
+    const mwSize nTrials = static_cast<mwSize>(lookup.count_log2.size() - 1);
     for (mwSize i = 0; i < nTrials; ++i) {
         const mwSize xi = x[i];
         const mwSize yi = y[i];
@@ -149,10 +170,10 @@ double calc_cmi_buffered(
         ++pxyz[xi * (ym * zm) + yz];
     }
 
-    return entropy_from_counts(pxz, xm * zm, nTrials)
-        + entropy_from_counts(pyz, ym * zm, nTrials)
-        - entropy_from_counts(pxyz, xm * ym * zm, nTrials)
-        - entropy_from_counts(pz, zm, nTrials);
+    return entropy_from_counts(pxz, xm * zm, lookup)
+        + entropy_from_counts(pyz, ym * zm, lookup)
+        - entropy_from_counts(pxyz, xm * ym * zm, lookup)
+        - entropy_from_counts(pz, zm, lookup);
 }
 
 void plan_eqpop_bins_from_sorted(
@@ -250,10 +271,11 @@ double calc_info(
     const mwSize* y,
     mwSize ym,
     mwSize nTrials) {
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
     std::vector<mwSize> px(xm, 0);
     std::vector<mwSize> py(ym, 0);
     std::vector<mwSize> pxy(xm * ym, 0);
-    return calc_info_buffered(x, xm, y, ym, nTrials, px.data(), py.data(), pxy.data());
+    return calc_info_buffered(x, xm, y, ym, lookup, px.data(), py.data(), pxy.data());
 }
 
 void calc_info_matched(
@@ -266,6 +288,7 @@ void calc_info_matched(
     mwSize threadCount,
     double* output) {
     const mwSize nThreads = clamp_threads(threadCount);
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
 #ifdef _OPENMP
 #pragma omp parallel num_threads(static_cast<int>(nThreads)) default(shared)
     {
@@ -276,7 +299,7 @@ void calc_info_matched(
         for (mwSignedIndex col = 0; col < static_cast<mwSignedIndex>(nCols); ++col) {
             const mwSize offset = static_cast<mwSize>(col) * nTrials;
             output[col] = calc_info_buffered(
-                x + offset, xm, y + offset, ym, nTrials, px.data(), py.data(), pxy.data());
+                x + offset, xm, y + offset, ym, lookup, px.data(), py.data(), pxy.data());
         }
     }
 #else
@@ -287,7 +310,7 @@ void calc_info_matched(
     for (mwSize col = 0; col < nCols; ++col) {
         const mwSize offset = col * nTrials;
         output[col] = calc_info_buffered(
-            x + offset, xm, y + offset, ym, nTrials, px.data(), py.data(), pxy.data());
+            x + offset, xm, y + offset, ym, lookup, px.data(), py.data(), pxy.data());
     }
 #endif
 }
@@ -300,12 +323,13 @@ double calc_cmi(
     const mwSize* z,
     mwSize zm,
     mwSize nTrials) {
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
     std::vector<mwSize> pz(zm, 0);
     std::vector<mwSize> pxz(xm * zm, 0);
     std::vector<mwSize> pyz(ym * zm, 0);
     std::vector<mwSize> pxyz(xm * ym * zm, 0);
     return calc_cmi_buffered(
-        x, xm, y, ym, z, zm, nTrials, pz.data(), pxz.data(), pyz.data(), pxyz.data());
+        x, xm, y, ym, z, zm, lookup, pz.data(), pxz.data(), pyz.data(), pxyz.data());
 }
 
 void calc_cond_cmi(
@@ -328,6 +352,7 @@ void calc_cond_cmi(
     std::vector<mwSize> pxzk(km * xm * zm, 0);
     std::vector<mwSize> pyzk(km * ym * zm, 0);
     std::vector<mwSize> pxyzk(km * xm * ym * zm, 0);
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
 
     const mwSize yzStride = ym * zm;
     const mwSize xzStride = xm * zm;
@@ -352,20 +377,20 @@ void calc_cond_cmi(
         ++pxyzk[ki * xyzStride + xyz];
     }
 
-    *total = entropy_from_counts(pxz.data(), pxz.size(), nTrials)
-        + entropy_from_counts(pyz.data(), pyz.size(), nTrials)
-        - entropy_from_counts(pxyz.data(), pxyz.size(), nTrials)
-        - entropy_from_counts(pz.data(), pz.size(), nTrials);
+    *total = entropy_from_counts(pxz.data(), pxz.size(), lookup)
+        + entropy_from_counts(pyz.data(), pyz.size(), lookup)
+        - entropy_from_counts(pxyz.data(), pxyz.size(), lookup)
+        - entropy_from_counts(pz.data(), pz.size(), lookup);
 
     for (mwSize ki = 0; ki < km; ++ki) {
         const mwSize pzOffset = ki * zm;
         const mwSize xzOffset = ki * xzStride;
         const mwSize yzOffset = ki * yzStride;
         const mwSize xyzOffset = ki * xyzStride;
-        contributions[ki] = entropy_from_counts(pxzk.data() + xzOffset, xzStride, nTrials)
-            + entropy_from_counts(pyzk.data() + yzOffset, yzStride, nTrials)
-            - entropy_from_counts(pxyzk.data() + xyzOffset, xyzStride, nTrials)
-            - entropy_from_counts(pzk.data() + pzOffset, zm, nTrials);
+        contributions[ki] = entropy_from_counts(pxzk.data() + xzOffset, xzStride, lookup)
+            + entropy_from_counts(pyzk.data() + yzOffset, yzStride, lookup)
+            - entropy_from_counts(pxyzk.data() + xyzOffset, xyzStride, lookup)
+            - entropy_from_counts(pzk.data() + pzOffset, zm, lookup);
     }
 }
 
@@ -381,6 +406,7 @@ void calc_cmi_slice(
     mwSize threadCount,
     double* output) {
     const mwSize nThreads = clamp_threads(threadCount);
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
 #ifdef _OPENMP
 #pragma omp parallel num_threads(static_cast<int>(nThreads)) default(shared)
     {
@@ -392,7 +418,7 @@ void calc_cmi_slice(
         for (mwSignedIndex col = 0; col < static_cast<mwSignedIndex>(nCols); ++col) {
             const mwSize* xCol = x + static_cast<mwSize>(col) * nTrials;
             output[col] = calc_cmi_buffered(
-                xCol, xm, y, ym, z, zm, nTrials, pz.data(), pxz.data(), pyz.data(), pxyz.data());
+                xCol, xm, y, ym, z, zm, lookup, pz.data(), pxz.data(), pyz.data(), pxyz.data());
         }
     }
 #else
@@ -404,7 +430,7 @@ void calc_cmi_slice(
     for (mwSize col = 0; col < nCols; ++col) {
         const mwSize* xCol = x + col * nTrials;
         output[col] = calc_cmi_buffered(
-            xCol, xm, y, ym, z, zm, nTrials, pz.data(), pxz.data(), pyz.data(), pxyz.data());
+            xCol, xm, y, ym, z, zm, lookup, pz.data(), pxz.data(), pyz.data(), pxyz.data());
     }
 #endif
 }
@@ -419,11 +445,12 @@ void calc_info_slice(
     mwSize threadCount,
     double* output) {
     const mwSize nThreads = clamp_threads(threadCount);
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
     std::vector<mwSize> py(ym, 0);
     for (mwSize i = 0; i < nTrials; ++i) {
         ++py[y[i]];
     }
-    const double hy = entropy_from_counts(py.data(), py.size(), nTrials);
+    const double hy = entropy_from_counts(py.data(), py.size(), lookup);
 
 #ifdef _OPENMP
 #pragma omp parallel num_threads(static_cast<int>(nThreads)) default(shared)
@@ -434,7 +461,7 @@ void calc_info_slice(
         for (mwSignedIndex col = 0; col < static_cast<mwSignedIndex>(nCols); ++col) {
             const mwSize* xCol = x + static_cast<mwSize>(col) * nTrials;
             output[col] = calc_info_with_precomputed_hy(
-                xCol, xm, y, ym, nTrials, hy, px.data(), pxy.data());
+                xCol, xm, y, ym, lookup, hy, px.data(), pxy.data());
         }
     }
 #else
@@ -444,7 +471,7 @@ void calc_info_slice(
     for (mwSize col = 0; col < nCols; ++col) {
         const mwSize* xCol = x + col * nTrials;
         output[col] = calc_info_with_precomputed_hy(
-            xCol, xm, y, ym, nTrials, hy, px.data(), pxy.data());
+            xCol, xm, y, ym, lookup, hy, px.data(), pxy.data());
     }
 #endif
 }
@@ -460,6 +487,7 @@ void calc_info_perm(
     std::uint64_t seed,
     double* output) {
     const mwSize nThreads = clamp_threads(threadCount);
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
 
 #ifdef _OPENMP
 #pragma omp parallel num_threads(static_cast<int>(nThreads)) default(shared)
@@ -473,7 +501,7 @@ void calc_info_perm(
             std::copy(x, x + nTrials, xsh.begin());
             fisher_yates_shuffle_seeded(xsh, splitmix64(seed + static_cast<std::uint64_t>(perm)));
             output[perm] = calc_info_buffered(
-                xsh.data(), xm, y, ym, nTrials, px.data(), py.data(), pxy.data());
+                xsh.data(), xm, y, ym, lookup, px.data(), py.data(), pxy.data());
         }
     }
 #else
@@ -486,7 +514,7 @@ void calc_info_perm(
         std::copy(x, x + nTrials, xsh.begin());
         fisher_yates_shuffle_seeded(xsh, splitmix64(seed + static_cast<std::uint64_t>(perm)));
         output[perm] = calc_info_buffered(
-            xsh.data(), xm, y, ym, nTrials, px.data(), py.data(), pxy.data());
+            xsh.data(), xm, y, ym, lookup, px.data(), py.data(), pxy.data());
     }
 #endif
 }
@@ -503,6 +531,7 @@ void calc_info_perm_slice(
     std::uint64_t seed,
     double* output) {
     const mwSize nThreads = clamp_threads(threadCount);
+    const EntropyLookup lookup = build_entropy_lookup(nTrials);
 #ifdef _OPENMP
 #pragma omp parallel num_threads(static_cast<int>(nThreads)) default(shared)
     {
@@ -520,7 +549,7 @@ void calc_info_perm_slice(
                 const std::uint64_t permSeed = splitmix64(colSeed + static_cast<std::uint64_t>(perm));
                 fisher_yates_shuffle_seeded(xsh, permSeed);
                 outCol[perm] = calc_info_buffered(
-                    xsh.data(), xm, y, ym, nTrials, px.data(), py.data(), pxy.data());
+                    xsh.data(), xm, y, ym, lookup, px.data(), py.data(), pxy.data());
             }
         }
     }
@@ -539,7 +568,7 @@ void calc_info_perm_slice(
             const std::uint64_t permSeed = splitmix64(colSeed + static_cast<std::uint64_t>(perm));
             fisher_yates_shuffle_seeded(xsh, permSeed);
             outCol[perm] = calc_info_buffered(
-                xsh.data(), xm, y, ym, nTrials, px.data(), py.data(), pxy.data());
+                xsh.data(), xm, y, ym, lookup, px.data(), py.data(), pxy.data());
         }
     }
 #endif
